@@ -1,7 +1,31 @@
-import { TerrainType, ScoringResult, CASConfiguration, Question } from "../types";
+import { TerrainType, ScoringResult, CASConfiguration, Question, Answers, RankedAnswer } from "../types";
 
+/**
+ * Check if an answer is a ranked answer (V2) or simple answer (legacy)
+ */
+function isRankedAnswer(answer: string | RankedAnswer): answer is RankedAnswer {
+  return typeof answer === 'object' && 'first' in answer && 'second' in answer;
+}
+
+/**
+ * Calculate terrain scores and determine archetype from quiz answers.
+ * 
+ * Scoring Rules (V2 Ranked Choice):
+ * - 1st choice ("Most like me"): +2 points
+ * - 2nd choice ("Next most like me"): +1 point
+ * - Repulsion ("Least like me"): Tracked separately as orthogonal signal
+ * 
+ * Legacy Support:
+ * - Simple answers (single optionId): +1 point each
+ * 
+ * Overrides:
+ * - Disorganized override if high Anxious + Avoidant (hidden oscillation)
+ * - Secure-first flag if Secure is dominant
+ * 
+ * Tie-breaking priority: Disorganized > Anxious > Avoidant > Secure
+ */
 export function calculateTerrainScore(
-  answers: Record<string, string>, // questionId -> optionId
+  answers: Answers,
   config: CASConfiguration
 ): ScoringResult {
   const scores: Record<TerrainType, number> = {
@@ -11,141 +35,129 @@ export function calculateTerrainScore(
     Disorganized: 0
   };
 
-  const flags: string[] = [];
-  const rawAnswers = answers;
+  const repulsionScores: Record<TerrainType, number> = {
+    Anxious: 0,
+    Avoidant: 0,
+    Secure: 0,
+    Disorganized: 0
+  };
 
-  // 1. Tally Points
-  // We need to look up the terrain for each selected option
+  const flags: string[] = [];
+
+  // Build question lookup map
   const questionMap = new Map<string, Question>();
   config.questions.forEach(q => questionMap.set(q.id, q));
 
-  // Track choices for oscillation check
-  const choices: TerrainType[] = [];
+  // Helper to get terrain from optionId
+  const getTerrainForOption = (questionId: string, optionId: string): TerrainType | null => {
+    const question = questionMap.get(questionId);
+    if (!question) return null;
+    const option = question.options.find(o => o.id === optionId);
+    return option?.terrain || null;
+  };
 
-  Object.entries(answers).forEach(([qId, optionId]) => {
-    const question = questionMap.get(qId);
-    if (question) {
-      const option = question.options.find(o => o.id === optionId);
-      if (option) {
-        scores[option.terrain]++;
-        choices.push(option.terrain);
-      }
+  // Tally Points
+  Object.entries(answers).forEach(([questionId, answer]) => {
+    if (isRankedAnswer(answer)) {
+      // V2 Ranked Choice Scoring
+      const firstTerrain = getTerrainForOption(questionId, answer.first);
+      const secondTerrain = getTerrainForOption(questionId, answer.second);
+      const repulsionTerrain = getTerrainForOption(questionId, answer.repulsion);
+
+      if (firstTerrain) scores[firstTerrain] += 2;
+      if (secondTerrain) scores[secondTerrain] += 1;
+      if (repulsionTerrain) repulsionScores[repulsionTerrain] += 1;
+    } else {
+      // Legacy single-choice scoring (+1 point)
+      const terrain = getTerrainForOption(questionId, answer);
+      if (terrain) scores[terrain] += 1;
     }
   });
 
-  // 2. Overrides
+  // Sort terrains by score (descending), with tie-breaking priority
+  const terrainPriority: Record<TerrainType, number> = {
+    Disorganized: 4,
+    Anxious: 3,
+    Avoidant: 2,
+    Secure: 1
+  };
 
-  // 2.1 Disorganized Override (Hidden Fragmentation)
-  // Trigger: Oscillation between Anxious and Avoidant on 3+ questions? 
-  // Wait, the prompt says "User oscillates between Anxious (1st) and Avoidant (2nd) or vice versa".
-  // Since we only pick ONE option per question, "1st choice" is the ONLY choice here.
-  // So "Oscillation" likely means they picked Anxious sometimes and Avoidant other times.
-  // Let's interpret "oscillates ... on 3+ questions" as:
-  // Having at least 3 Anxious AND at least 3 Avoidant answers? 
-  // OR just switching back and forth? The prompt says "between Anxious (1st) and Avoidant (2nd)".
-  // NOTE: In the Prompt's "Tie-Breaking & Overrides" section, it mentions "1st choice" and "2nd choice".
-  // This implies the user might be ranking answers, OR the "questions" have multiple selections?
-  // My clarification question established "4 options, one per Terrain".
-  // If the user selects ONE option per question, "1st choice" is that selection.
-  // The "Secure-First Override" says "User selects Secure as 1st choice on 6+ questions. Logic: Analyze 2nd choices."
-  // This strongly implies we need a SECOND choice data point. 
-  // However, standard likert/terrain quizzes usually just have one selection.
-  // Given the complexity, I will implement scoring based on the PRIMARY selection for now.
-  // If the prompt implies RANKED choice (Pick 1st, Pick 2nd), that changes the data structure.
-  // RE-READING PROMPT: "User selects Secure as 1st choice... Analyze 2nd choices."
-  // This confirms we probably need a "Secondary Choice" or the questions are ranked?
-  // BUT I asked "Does each question have exactly 4 specific answer choices..." and confirmed structure.
-  // I will assume for this implementation that we are calculating based on Single Choice first.
-  // If "2nd choice" is required, we would need to ask the user to pick two? 
-  // Let's stick to the Single Choice Tally for the MVP unless specified otherwise.
-  
-  // Actually, let's implement the logic assuming we MIGHT have 2nd choices in the future,
-  // but for now we only have the "Primary" choice (the one selected).
-  
-  // Let's implement the "Disorganized Override" based on the mix of answers.
-  // If Anxious > 0 AND Avoidant > 0, that's some oscillation.
-  // Prompt: "Oscillates ... on 3+ questions".
-  // Interpretation: If (Anxious Count >= 3) AND (Avoidant Count >= 3)?
-  // Let's go with a simpler check for now: High Anxious + High Avoidant = Disorganized.
-  
-  // Actually, looking at "Tiebreaker Priority": Disorganized > Anxious > Avoidant > Secure.
-  
-  // Let's implement the standard scoring first.
-  
   const sortedTerrains = (Object.keys(scores) as TerrainType[]).sort((a, b) => {
-    // Primary sort: Score (descending)
     if (scores[b] !== scores[a]) return scores[b] - scores[a];
-    
-    // Tie-breaking Priority: Disorganized > Anxious > Avoidant > Secure
-    const priority = { Disorganized: 4, Anxious: 3, Avoidant: 2, Secure: 1 };
-    return priority[b] - priority[a];
+    return terrainPriority[b] - terrainPriority[a];
   });
 
   let primaryTerrain = sortedTerrains[0];
-  let secondaryTerrain = sortedTerrains[1];
+  const secondaryTerrain = sortedTerrains[1];
 
-  // 2.2 Secure-First Override Logic (Simplified for Single Choice)
-  // If Secure is very high (e.g. 6+), but we have a clear secondary pattern.
-  if (scores.Secure >= 6) {
+  // Apply Overrides
+
+  // Check for ranked choice mode (max possible score is 16 with 8 questions × 2 points)
+  const maxScore = Math.max(...Object.values(scores));
+  const isRankedMode = maxScore > 8;
+
+  // Secure-First Override: Flag if Secure is dominant
+  const secureThreshold = isRankedMode ? 12 : 6; // Adjust for ranked vs simple
+  if (scores.Secure >= secureThreshold) {
     flags.push("confirmed_secure");
-    // If secondary is strong enough, we might want to flag "regulated_presentation"
-    // But primary remains Secure.
   }
 
-  // 2.3 Disorganized Override (Hidden Fragmentation)
-  // If we have high Anxious AND high Avoidant, this suggests Disorganized.
-  // E.g. Anxious >= 3 AND Avoidant >= 3
-  if (scores.Anxious >= 3 && scores.Avoidant >= 3) {
+  // Disorganized Override (Hidden Fragmentation):
+  // High Anxious AND high Avoidant suggests oscillation pattern
+  const oscillationThreshold = isRankedMode ? 6 : 3;
+  if (scores.Anxious >= oscillationThreshold && scores.Avoidant >= oscillationThreshold) {
     flags.push("hidden_disorganized");
     primaryTerrain = "Disorganized";
-    // Secondary becomes the higher of Anxious/Avoidant, or remains as is.
   }
 
-  // 3. Archetype Mapping
+  // Repulsion-based flags
+  const maxRepulsion = Math.max(...Object.values(repulsionScores));
+  if (maxRepulsion >= 4) {
+    const highRepulsion = (Object.entries(repulsionScores) as [TerrainType, number][])
+      .filter(([, count]) => count >= 4)
+      .map(([terrain]) => terrain);
+    
+    if (highRepulsion.length > 0) {
+      flags.push(`strong_repulsion_${highRepulsion[0].toLowerCase()}`);
+    }
+  }
+
+  // Check for consistency patterns
+  const totalAnswers = Object.keys(answers).length;
+  if (totalAnswers === 8) {
+    // Full assessment completed
+    flags.push("complete_assessment");
+    
+    // Check for high consistency (one terrain dominates)
+    const dominanceRatio = scores[primaryTerrain] / (isRankedMode ? 24 : 8);
+    if (dominanceRatio >= 0.6) {
+      flags.push("high_consistency");
+    }
+  }
+
+  // Archetype Mapping based on Primary + Secondary terrain
   let archetypeId: string | undefined;
 
-  // Special Case: Mystery Mosaic (Disorganized Primary)
   if (primaryTerrain === "Disorganized") {
     archetypeId = "mystery_mosaic";
-  } else {
-    // Map Pair (Primary + Secondary)
-    // Note: Secondary can be null if Primary is dominant? The logic says "Secondary Assignment: ... second-highest score".
-    // So we always have a secondary unless scores are 8-0-0-0.
-    
-    // const pair = [primaryTerrain, secondaryTerrain].sort().join('+');
-    
-    // Mappings based on "Composition" in prompt
-    // Secure + Secure (Pure) -> Grounded Navigator (Secure Primary, others low)
-    // Anxious + Secure -> Emotional Enthusiast
-    // Anxious + Avoidant -> Passionate Pilgrim
-    // Anxious + Disorganized -> Heartfelt Defender
-    // Avoidant + Secure -> Lone Wolf
-    // Avoidant + Anxious -> Independent Icon
-    // Avoidant + Disorganized -> Chill Conductor
-    
-    // Note: The prompt lists specific compositions.
-    // "Secure Primary" -> Grounded Navigator. (Does it matter what secondary is? Prompt says "Composition: Secure Primary")
-    // Let's assume if Primary is Secure, it's Grounded Navigator.
-    if (primaryTerrain === "Secure") {
-      archetypeId = "grounded_navigator";
-    }
-    // "Disorganized Primary" -> Mystery Mosaic (Handled above)
-    
-    // Anxious Primary
-    else if (primaryTerrain === "Anxious") {
-      if (secondaryTerrain === "Secure") archetypeId = "emotional_enthusiast";
-      else if (secondaryTerrain === "Avoidant") archetypeId = "passionate_pilgrim";
-      else if (secondaryTerrain === "Disorganized") archetypeId = "heartfelt_defender";
-      else archetypeId = "emotional_enthusiast"; // Fallback?
-    }
-    
-    // Avoidant Primary
-    else if (primaryTerrain === "Avoidant") {
-      if (secondaryTerrain === "Secure") archetypeId = "lone_wolf";
-      else if (secondaryTerrain === "Anxious") archetypeId = "independent_icon";
-      else if (secondaryTerrain === "Disorganized") archetypeId = "chill_conductor";
-      else archetypeId = "lone_wolf"; // Fallback
-    }
+  } else if (primaryTerrain === "Secure") {
+    archetypeId = "grounded_navigator";
+  } else if (primaryTerrain === "Anxious") {
+    const anxiousArchetypes: Record<TerrainType, string> = {
+      Secure: "emotional_enthusiast",
+      Avoidant: "passionate_pilgrim",
+      Disorganized: "heartfelt_defender",
+      Anxious: "emotional_enthusiast"
+    };
+    archetypeId = anxiousArchetypes[secondaryTerrain];
+  } else if (primaryTerrain === "Avoidant") {
+    const avoidantArchetypes: Record<TerrainType, string> = {
+      Secure: "lone_wolf",
+      Anxious: "independent_icon",
+      Disorganized: "chill_conductor",
+      Avoidant: "lone_wolf"
+    };
+    archetypeId = avoidantArchetypes[secondaryTerrain];
   }
 
   const archetype = config.archetypes.find(a => a.id === archetypeId) || null;
@@ -156,6 +168,7 @@ export function calculateTerrainScore(
     archetype,
     flags,
     scores,
-    rawAnswers
+    repulsionScores,
+    rawAnswers: answers
   };
 }

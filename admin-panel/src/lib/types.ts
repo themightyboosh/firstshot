@@ -1,3 +1,5 @@
+// Shared types - mirrored from functions/src/modules/cas-core/types
+
 export type TerrainType = 'Anxious' | 'Avoidant' | 'Secure' | 'Disorganized';
 
 export interface QuestionOption {
@@ -25,6 +27,9 @@ export interface Archetype {
   primaryTerrain: TerrainType | 'Disorganized';
   secondaryTerrain: TerrainType | null;
   profileData: ArchetypeProfile;
+  imageDescription?: string;  // For AI image prompts
+  imageUrl?: string;          // Generated or uploaded image URL
+  imageJobId?: string;        // BullMQ job ID for pending generation
 }
 
 /**
@@ -65,4 +70,30 @@ export interface CASConfiguration {
   };
   questions: Question[];
   archetypes: Archetype[];
+}
+
+export interface Situation {
+  id?: string;
+  name: string;
+  squarePngUrl: string;
+  shortDescription: string;
+  longDescription: string;
+  promptFragment: string;
+}
+
+// Saved configuration set (for Configurations tab)
+export interface SavedConfigSet {
+  id: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  config: CASConfiguration;
+}
+
+// Prompt Elements configuration
+export interface PromptElementsConfig {
+  stylePrompt: string;  // "In the style of..." text for AI prompts
+  updatedAt: string;
 }

@@ -1,0 +1,30 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // CAS Configuration - allow read/write for admin
+    match /cas_config/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Configuration Sets - allow read/write for admin
+    match /cas_config_sets/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Situations - allow read/write for admin
+    match /situations/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Prompt Elements - allow read/write for admin
+    match /prompt_elements/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Image Generation Jobs - allow read/write for admin
+    match /image_generation_jobs/{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

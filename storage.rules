@@ -1,0 +1,10 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Archetype images - allow read/write for admin
+    match /archetype-images/{allPaths=**} {
+      allow read, write: if true;
+    }
+  }
+}

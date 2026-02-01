@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Settings, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, Settings, MessageSquare, Palette } from 'lucide-react';
 
 export default function Layout() {
   const location = useLocation();
@@ -7,6 +7,7 @@ export default function Layout() {
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/cas-config', label: 'CAS Configuration', icon: Settings },
+    { path: '/prompt-elements', label: 'Prompt Elements', icon: Palette },
     { path: '/situations', label: 'Situations', icon: MessageSquare },
   ];
 

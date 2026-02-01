@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../lib/firebase';
 import { Plus, Trash2, Edit2, Loader2, Image as ImageIcon } from 'lucide-react';
+import { situationsApi } from '../lib/api';
+import type { Situation } from '../lib/types';
+
+type EditingSituation = Partial<Situation> & { id?: string };
 
 export default function Situations() {
-  const [situations, setSituations] = useState<any[]>([]);
+  const [situations, setSituations] = useState<Situation[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<any | null>(null); // null means list view, object means edit mode (empty object for new)
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<EditingSituation | null>(null);
 
   useEffect(() => {
     loadSituations();
@@ -14,12 +18,13 @@ export default function Situations() {
 
   const loadSituations = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const getSituations = httpsCallable(functions, 'getSituations');
-      const result = await getSituations();
-      setSituations(result.data as any[]);
+      const result = await situationsApi.getAll();
+      setSituations(result);
     } catch (err) {
       console.error(err);
+      setError(err instanceof Error ? err.message : 'Failed to load situations');
     } finally {
       setLoading(false);
     }
@@ -28,11 +33,12 @@ export default function Situations() {
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this situation?')) return;
     try {
-      const deleteSituation = httpsCallable(functions, 'deleteSituation');
-      await deleteSituation({ id });
+      await situationsApi.delete(id);
       await loadSituations();
     } catch (err) {
-      alert('Failed to delete');
+      const message = err instanceof Error ? err.message : 'Failed to delete';
+      setError(message);
+      alert(message);
     }
   };
 
@@ -40,19 +46,53 @@ export default function Situations() {
     e.preventDefault();
     if (!editing) return;
 
+    // Validate required fields
+    if (!editing.name?.trim()) {
+      alert('Name is required');
+      return;
+    }
+    if (!editing.shortDescription?.trim()) {
+      alert('Short description is required');
+      return;
+    }
+    if (!editing.longDescription?.trim()) {
+      alert('Long description is required');
+      return;
+    }
+    if (!editing.promptFragment?.trim()) {
+      alert('Prompt fragment is required');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    
     try {
       if (editing.id) {
-        const updateSituation = httpsCallable(functions, 'updateSituation');
-        await updateSituation(editing);
+        await situationsApi.update(editing as Situation);
       } else {
-        const createSituation = httpsCallable(functions, 'createSituation');
-        await createSituation(editing);
+        await situationsApi.create({
+          name: editing.name,
+          shortDescription: editing.shortDescription,
+          longDescription: editing.longDescription,
+          promptFragment: editing.promptFragment,
+          squarePngUrl: editing.squarePngUrl || '',
+        });
       }
       setEditing(null);
-      loadSituations();
+      await loadSituations();
     } catch (err) {
-      alert('Failed to save');
+      const message = err instanceof Error ? err.message : 'Failed to save';
+      setError(message);
+      alert(message);
+    } finally {
+      setSaving(false);
     }
+  };
+
+  const updateField = <K extends keyof EditingSituation>(field: K, value: EditingSituation[K]) => {
+    if (!editing) return;
+    setEditing({ ...editing, [field]: value });
   };
 
   if (loading && !editing) {
@@ -68,7 +108,13 @@ export default function Situations() {
       <div className="space-y-6 max-w-2xl mx-auto">
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold">{editing.id ? 'Edit Situation' : 'New Situation'}</h2>
-          <button onClick={() => setEditing(null)} className="text-gray-500 hover:text-gray-700">Cancel</button>
+          <button 
+            onClick={() => setEditing(null)} 
+            className="text-gray-500 hover:text-gray-700"
+            disabled={saving}
+          >
+            Cancel
+          </button>
         </div>
 
         <form onSubmit={handleSave} className="space-y-4 bg-white p-6 rounded-xl shadow-sm border">
@@ -79,7 +125,7 @@ export default function Situations() {
               required
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
               value={editing.name || ''}
-              onChange={e => setEditing({ ...editing, name: e.target.value })}
+              onChange={e => updateField('name', e.target.value)}
             />
           </div>
 
@@ -90,7 +136,7 @@ export default function Situations() {
               required
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
               value={editing.shortDescription || ''}
-              onChange={e => setEditing({ ...editing, shortDescription: e.target.value })}
+              onChange={e => updateField('shortDescription', e.target.value)}
             />
           </div>
 
@@ -101,7 +147,7 @@ export default function Situations() {
               rows={4}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
               value={editing.longDescription || ''}
-              onChange={e => setEditing({ ...editing, longDescription: e.target.value })}
+              onChange={e => updateField('longDescription', e.target.value)}
             />
           </div>
 
@@ -112,7 +158,7 @@ export default function Situations() {
               rows={3}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
               value={editing.promptFragment || ''}
-              onChange={e => setEditing({ ...editing, promptFragment: e.target.value })}
+              onChange={e => updateField('promptFragment', e.target.value)}
             />
           </div>
 
@@ -123,7 +169,7 @@ export default function Situations() {
                 type="url"
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
                 value={editing.squarePngUrl || ''}
-                onChange={e => setEditing({ ...editing, squarePngUrl: e.target.value })}
+                onChange={e => updateField('squarePngUrl', e.target.value)}
                 placeholder="https://..."
               />
             </div>
@@ -132,9 +178,17 @@ export default function Situations() {
           <div className="pt-4">
             <button
               type="submit"
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              disabled={saving}
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
             >
-              Save Situation
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                'Save Situation'
+              )}
             </button>
           </div>
         </form>
@@ -158,39 +212,54 @@ export default function Situations() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {situations.map((situation) => (
-          <div key={situation.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
-            <div className="h-48 bg-gray-100 relative">
-               {situation.squarePngUrl ? (
-                 <img src={situation.squarePngUrl} alt={situation.name} className="w-full h-full object-cover" />
-               ) : (
-                 <div className="w-full h-full flex items-center justify-center text-gray-400">
-                   <ImageIcon className="w-12 h-12" />
-                 </div>
-               )}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          {error}
+          <button onClick={() => setError(null)} className="ml-2 underline">Dismiss</button>
+        </div>
+      )}
+
+      {situations.length === 0 ? (
+        <div className="bg-gray-50 p-8 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
+          No situations yet. Click "Add Situation" to create one.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {situations.map((situation) => (
+            <div key={situation.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+              <div className="h-48 bg-gray-100 relative">
+                 {situation.squarePngUrl ? (
+                   <img src={situation.squarePngUrl} alt={situation.name} className="w-full h-full object-cover" />
+                 ) : (
+                   <div className="w-full h-full flex items-center justify-center text-gray-400">
+                     <ImageIcon className="w-12 h-12" />
+                   </div>
+                 )}
+              </div>
+              <div className="p-4 flex-1">
+                <h3 className="font-bold text-lg mb-1">{situation.name}</h3>
+                <p className="text-sm text-gray-500 line-clamp-2">{situation.shortDescription}</p>
+              </div>
+              <div className="p-4 border-t bg-gray-50 flex justify-end space-x-2">
+                <button
+                  onClick={() => setEditing(situation)}
+                  className="p-2 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-full"
+                  title="Edit"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => situation.id && handleDelete(situation.id)}
+                  className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-full"
+                  title="Delete"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            <div className="p-4 flex-1">
-              <h3 className="font-bold text-lg mb-1">{situation.name}</h3>
-              <p className="text-sm text-gray-500 line-clamp-2">{situation.shortDescription}</p>
-            </div>
-            <div className="p-4 border-t bg-gray-50 flex justify-end space-x-2">
-              <button
-                onClick={() => setEditing(situation)}
-                className="p-2 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-full"
-              >
-                <Edit2 className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => handleDelete(situation.id)}
-                className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-full"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
