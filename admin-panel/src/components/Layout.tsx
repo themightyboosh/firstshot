@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Settings, MessageSquare, Database } from 'lucide-react';
+import { LayoutDashboard, Settings, MessageSquare } from 'lucide-react';
 
 export default function Layout() {
   const location = useLocation();

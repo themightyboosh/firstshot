@@ -1,6 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from './firebase';
+import { createContext, useContext, useState } from 'react';
 
 interface AdminContextType {
   seedDatabase: () => Promise<void>;
