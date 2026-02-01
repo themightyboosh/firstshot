@@ -18,12 +18,12 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
   const seedDatabase = async () => {
     setLoading(true);
     try {
-      // In production we would call the cloud function
-      // For now, we can manually trigger the seed function URL if needed
-      // or call a callable function if we made one.
-      // We made `initCasConfig` as an onRequest function.
+      const isDev = location.hostname === "localhost" && import.meta.env.DEV;
+      const url = isDev 
+        ? "http://localhost:5001/realness-score/us-central1/initCasConfig"
+        : "https://us-central1-realness-score.cloudfunctions.net/initCasConfig";
       
-      const response = await fetch(`http://localhost:5001/realness-score/us-central1/initCasConfig`);
+      const response = await fetch(url);
       const result = await response.json();
       alert(result.message);
     } catch (error) {
