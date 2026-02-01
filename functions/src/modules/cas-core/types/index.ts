@@ -1,79 +1,47 @@
+export type TerrainType = 'Anxious' | 'Avoidant' | 'Secure' | 'Disorganized';
+
+export interface QuestionOption {
+  id: string;
+  text: string;
+  terrain: TerrainType;
+}
+
 export interface Question {
   id: string;
   text: string;
-  type: string;
-  category: string;
-  order: number;
-  weight: number;
-}
-
-export interface ScaleRange {
-  id: string;
-  min: number;
-  max: number;
-  label: string;
-  description: string;
-}
-
-export interface ScaleCalculation {
-  method: string;
-  targetQuestionIds: string[];
-}
-
-export interface Scale {
-  id: string;
-  name: string;
-  description: string;
-  calculation: ScaleCalculation;
-  ranges: ScaleRange[];
-}
-
-export interface ArchetypeRuleCondition {
-  scaleId?: string;
-  questionId?: string;
-  operator: "lt" | "lte" | "gt" | "gte" | "eq";
-  value: number;
-}
-
-export interface ArchetypeRules {
-  operator: "AND" | "OR";
-  conditions: ArchetypeRuleCondition[];
+  options: QuestionOption[];
 }
 
 export interface ArchetypeProfile {
-  shortTag: string;
-  description: string;
-  expandedDescription?: string;
-  shadowSide: string;
-  growthPath: string;
-  strengths: string;
-  promptFragment: string;
+  coreRecognition: string;
+  protectiveLogic: string;
+  costUnderStress: string;
+  repulsionDisavowal: string;
 }
 
 export interface Archetype {
   id: string;
-  originalId?: number;
   name: string;
-  priority: number;
-  triggerRules: ArchetypeRules;
+  primaryTerrain: TerrainType | 'Disorganized'; // Disorganized can be primary
+  secondaryTerrain: TerrainType | null; // Null for "Pure" types like Secure, Lone Wolf (Avoidant)
   profileData: ArchetypeProfile;
 }
 
-export interface CASContent {
-  introText: string;
-  completionText: string;
-}
-
-export interface CASMeta {
-  version: string;
-  lastUpdated: string;
-  name: string;
+export interface ScoringResult {
+  primaryTerrain: TerrainType;
+  secondaryTerrain: TerrainType;
+  archetype: Archetype | null;
+  flags: string[];
+  scores: Record<TerrainType, number>;
+  rawAnswers?: Record<string, string>; // questionId -> optionId
 }
 
 export interface CASConfiguration {
-  meta: CASMeta;
+  meta: {
+    version: string;
+    lastUpdated: string;
+    name: string;
+  };
   questions: Question[];
-  scales: Scale[];
   archetypes: Archetype[];
-  content: CASContent;
 }

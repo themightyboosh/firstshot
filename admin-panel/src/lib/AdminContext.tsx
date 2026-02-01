@@ -1,4 +1,6 @@
 import { createContext, useContext, useState } from 'react';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from './firebase';
 
 interface AdminContextType {
   seedDatabase: () => Promise<void>;
@@ -18,14 +20,10 @@ export const AdminProvider = ({ children }: { children: React.ReactNode }) => {
   const seedDatabase = async () => {
     setLoading(true);
     try {
-      const isDev = location.hostname === "localhost" && import.meta.env.DEV;
-      const url = isDev 
-        ? "http://localhost:5001/realness-score/us-central1/initCasConfig"
-        : "https://us-central1-realness-score.cloudfunctions.net/initCasConfig";
-      
-      const response = await fetch(url);
-      const result = await response.json();
-      alert(result.message);
+      const initCasConfig = httpsCallable(functions, 'initCasConfig');
+      // Pass force: true to ensure update happens since we changed seed data
+      const result = await initCasConfig({ force: true });
+      alert((result.data as any).message);
     } catch (error) {
       console.error("Error seeding database:", error);
       alert("Error seeding database. Check console.");
