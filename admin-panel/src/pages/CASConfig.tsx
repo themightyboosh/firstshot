@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Save, Loader2, PlayCircle, Plus, Trash2, GripVertical, RefreshCw, BarChart3, FolderOpen, Check, Star, Shuffle, Download, Upload, Sparkles, Image } from 'lucide-react';
 import { casApi, firestoreApi, archetypeImageApi, promptElementsApi } from '../lib/api';
+import type { ImageJobStatus } from '../lib/api';
 import { defaultConfig } from '../lib/defaultConfig';
 import type { CASConfiguration, Question, Archetype, ScoringResult, TerrainType, RankedAnswer, QuestionOption, SavedConfigSet } from '../lib/types';
 
@@ -83,7 +84,25 @@ export default function CASConfig() {
           result.questions[0]?.text?.includes('Terrain Question')) {
         setConfig(defaultConfig);
       } else {
-        setConfig(result);
+        // Ensure archetypes have their image data properly loaded
+        const configWithImages: CASConfiguration = {
+          ...result,
+          archetypes: result.archetypes.map(arch => ({
+            ...arch,
+            // Preserve image data from Firestore
+            imageUrl: arch.imageUrl || undefined,
+            imageDescription: arch.imageDescription || undefined,
+            imageJobId: undefined, // Clear stale job IDs
+          }))
+        };
+        
+        console.log('Loaded config with images:', configWithImages.archetypes.map(a => ({
+          id: a.id,
+          name: a.name,
+          hasImage: !!a.imageUrl
+        })));
+        
+        setConfig(configWithImages);
       }
     } catch (err) {
       console.error(err);
@@ -148,7 +167,7 @@ export default function CASConfig() {
         throw new Error('Invalid config: missing archetypes array');
       }
       
-      // Ensure meta field exists
+      // Ensure meta field exists and preserve ALL archetype data including images
       const validConfig: CASConfiguration = {
         meta: importedConfig.meta || {
           version: '1.0',
@@ -156,8 +175,19 @@ export default function CASConfig() {
           name: 'Imported Configuration'
         },
         questions: importedConfig.questions,
-        archetypes: importedConfig.archetypes
+        archetypes: importedConfig.archetypes.map((arch: Archetype) => ({
+          ...arch,
+          // Explicitly preserve image data from imported JSON
+          imageUrl: arch.imageUrl || undefined,
+          imageDescription: arch.imageDescription || undefined,
+        }))
       };
+      
+      console.log('Importing config with images:', validConfig.archetypes.map(a => ({
+        id: a.id,
+        name: a.name,
+        hasImage: !!a.imageUrl
+      })));
       
       // Generate a name for the imported config
       const importName = `Imported ${new Date().toLocaleString()}`;
@@ -369,7 +399,25 @@ export default function CASConfig() {
   };
 
   const loadConfigSet = (configSet: SavedConfigSet) => {
-    setConfig(configSet.config);
+    // Ensure all archetypes have their image properties preserved
+    const loadedConfig: CASConfiguration = {
+      ...configSet.config,
+      archetypes: configSet.config.archetypes.map(arch => ({
+        ...arch,
+        // Preserve image data from the config set
+        imageUrl: arch.imageUrl || undefined,
+        imageDescription: arch.imageDescription || undefined,
+        imageJobId: undefined, // Clear any stale job IDs
+      }))
+    };
+    
+    setConfig(loadedConfig);
+    console.log('Loaded config with archetypes:', loadedConfig.archetypes.map(a => ({ 
+      id: a.id, 
+      name: a.name, 
+      hasImage: !!a.imageUrl 
+    })));
+    
     setSuccessMsg(`Loaded "${configSet.name}". Click "Save Changes" to make it the active config.`);
     setTimeout(() => setSuccessMsg(null), 5000);
   };
@@ -391,8 +439,23 @@ export default function CASConfig() {
       console.log('Setting active config:', id);
       await firestoreApi.setActiveConfigSet(id);
       console.log('Config set activated, reloading...');
+      
+      // Reload the config sets first
       await loadConfigSets();
+      
+      // Reload the main config to get the newly activated config with images
       await loadConfig();
+      
+      // Log image status for debugging
+      if (config) {
+        console.log('Active config images:', config.archetypes.map(a => ({
+          id: a.id,
+          name: a.name,
+          hasImage: !!a.imageUrl,
+          imageUrl: a.imageUrl?.substring(0, 50)
+        })));
+      }
+      
       setSuccessMsg('Configuration set activated!');
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
@@ -459,75 +522,77 @@ export default function CASConfig() {
         });
       }
       
-      setSuccessMsg(`Image generation started (Job: ${result.jobId}). This may take a minute...`);
+      setSuccessMsg(`Image generation queued. Rate-limited to stay under quota...`);
       setTimeout(() => setSuccessMsg(null), 5000);
       
-      // Poll for job completion
-      pollJobStatus(archetype.id, result.jobId);
+      // Trigger processing immediately
+      archetypeImageApi.triggerJobProcessing(result.jobId).catch(err => {
+          console.error('Trigger processing failed:', err);
+          // If trigger fails, the job might sit in pending forever unless another trigger picks it up.
+          // We should probably inform the user if the trigger request failed.
+          setError('Failed to start image generation process. Please try again.');
+          setGeneratingImageFor(null);
+      });
+      
+      // Subscribe to realtime updates
+      subscribeToJobUpdates(archetype.id, result.jobId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start image generation');
-    } finally {
       setGeneratingImageFor(null);
     }
   };
 
-  const pollJobStatus = async (archetypeId: string, jobId: string) => {
-    const maxAttempts = 30; // 5 minutes max
-    let attempts = 0;
-    
-    const poll = async () => {
-      try {
-        const status = await archetypeImageApi.getJobStatus(jobId);
+  // Subscribe to job status changes via Firestore realtime listener
+  const subscribeToJobUpdates = (archetypeId: string, jobId: string) => {
+    const unsubscribe = archetypeImageApi.subscribeToJob(jobId, (status: ImageJobStatus) => {
+      console.log(`Job ${jobId} status: ${status.status}, queue position: ${status.queuePosition || 'N/A'}`);
+      
+      if (status.status === 'completed' && status.imageUrl) {
+        // Update archetype with generated image - instant refresh!
+        setConfig(prev => prev ? {
+          ...prev,
+          archetypes: prev.archetypes.map(arch =>
+            arch.id === archetypeId 
+              ? { ...arch, imageUrl: status.imageUrl, imageJobId: undefined } 
+              : arch
+          )
+        } : null);
         
-        if (status.status === 'completed' && status.imageUrl) {
-          // Update archetype with generated image
-          if (config) {
-            setConfig(prev => prev ? {
-              ...prev,
-              archetypes: prev.archetypes.map(arch =>
-                arch.id === archetypeId 
-                  ? { ...arch, imageUrl: status.imageUrl, imageJobId: undefined } 
-                  : arch
-              )
-            } : null);
-          }
-          setSuccessMsg('Image generated successfully! Remember to save changes.');
-          setTimeout(() => setSuccessMsg(null), 5000);
-          return;
-        }
-        
-        if (status.status === 'failed') {
-          setError(`Image generation failed: ${status.error || 'Unknown error'}`);
-          // Clear job ID
-          if (config) {
-            setConfig(prev => prev ? {
-              ...prev,
-              archetypes: prev.archetypes.map(arch =>
-                arch.id === archetypeId ? { ...arch, imageJobId: undefined } : arch
-              )
-            } : null);
-          }
-          return;
-        }
-        
-        // Still processing
-        attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(poll, 10000); // Poll every 10 seconds
-        } else {
-          setError('Image generation timed out. Please check back later.');
-        }
-      } catch (err) {
-        console.error('Poll error:', err);
-        attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(poll, 10000);
-        }
+        setSuccessMsg('Image generated successfully! Remember to save changes.');
+        setTimeout(() => setSuccessMsg(null), 5000);
+        setGeneratingImageFor(null);
+        unsubscribe(); // Stop listening
+        return;
       }
-    };
+      
+      if (status.status === 'failed') {
+        setError(`Image generation failed: ${status.error || 'Unknown error'}`);
+        // Clear job ID
+        setConfig(prev => prev ? {
+          ...prev,
+          archetypes: prev.archetypes.map(arch =>
+            arch.id === archetypeId ? { ...arch, imageJobId: undefined } : arch
+          )
+        } : null);
+        setGeneratingImageFor(null);
+        unsubscribe(); // Stop listening
+        return;
+      }
+      
+      // Status is 'pending' or 'processing' - keep listening and update UI
+      if (status.status === 'processing') {
+        setSuccessMsg('Generating image with AI (this can take 30-60s)...');
+      } else if (status.status === 'pending') {
+        const queueMsg = status.queuePosition ? ` (Position: ${status.queuePosition})` : '';
+        setSuccessMsg(`Job queued${queueMsg}. Waiting for worker...`);
+      }
+    });
     
-    // Start polling after initial delay
-    setTimeout(poll, 5000);
+    // Safety timeout - unsubscribe after 10 minutes
+    setTimeout(() => {
+      unsubscribe();
+      setGeneratingImageFor(null);
+    }, 600000);
   };
 
   const removeArchetypeImage = (archetypeId: string) => {
@@ -941,13 +1006,19 @@ export default function CASConfig() {
                     </label>
                     <div className="flex items-start space-x-4">
                       {/* Image Preview */}
-                      <div className="w-32 h-32 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 border-2 border-dashed border-gray-300">
+                      <div className="w-32 h-32 bg-gray-100 rounded-lg overflow-hidden shrink-0 border-2 border-dashed border-gray-300">
                         {arch.imageUrl ? (
                           <div className="relative w-full h-full group">
                             <img
+                              key={`${arch.id}-${arch.imageUrl}`}
                               src={arch.imageUrl}
                               alt={arch.name}
                               className="w-full h-full object-cover"
+                              onError={(e) => {
+                                console.warn(`Failed to load image for ${arch.name}:`, arch.imageUrl);
+                                (e.target as HTMLImageElement).src = '';
+                              }}
+                              loading="lazy"
                             />
                             <button
                               onClick={() => removeArchetypeImage(arch.id)}

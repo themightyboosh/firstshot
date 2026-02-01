@@ -1,4 +1,4 @@
-import * as admin from "firebase-admin";
+import { db } from "../../lib/firebase";
 
 export interface Situation {
   id?: string;
@@ -10,9 +10,6 @@ export interface Situation {
 }
 
 const COLLECTION_NAME = "situations";
-
-// Get shared Firestore instance
-const getDb = () => admin.firestore();
 
 // Validation helper
 export function validateSituation(data: unknown): asserts data is Omit<Situation, 'id'> {
@@ -64,7 +61,6 @@ export function validateSituation(data: unknown): asserts data is Omit<Situation
 export const createSituation = async (data: unknown): Promise<Situation> => {
   validateSituation(data);
   
-  const db = getDb();
   const situationData: Omit<Situation, 'id'> = {
     name: (data as Situation).name.trim(),
     shortDescription: (data as Situation).shortDescription.trim(),
@@ -139,7 +135,6 @@ export const updateSituation = async (id: string, data: Partial<Situation>): Pro
     throw new Error('No valid fields to update');
   }
 
-  const db = getDb();
   await db.collection(COLLECTION_NAME).doc(id).update(updateData);
 };
 
@@ -148,12 +143,10 @@ export const deleteSituation = async (id: string): Promise<void> => {
     throw new Error('Valid situation ID is required');
   }
   
-  const db = getDb();
   await db.collection(COLLECTION_NAME).doc(id).delete();
 };
 
 export const getSituations = async (): Promise<Situation[]> => {
-  const db = getDb();
   const snapshot = await db.collection(COLLECTION_NAME).get();
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Situation));
 };

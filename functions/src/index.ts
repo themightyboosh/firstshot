@@ -1,24 +1,20 @@
 import * as functions from "firebase-functions";
-import * as admin from "firebase-admin";
 import { defaultConfig } from "./modules/cas-core/defaults/default-config";
 import { validateConfig } from "./modules/cas-core/utils/validator";
 import { CASConfiguration } from "./modules/cas-core/types";
 import { calculateTerrainScore as calculateTerrainScoreUtil } from "./modules/cas-core/utils/scoring";
 import * as situations from "./modules/situations";
 import * as imageGeneration from "./modules/image-generation";
-
-// Initialize Firebase Admin (only once)
-if (!admin.apps.length) {
-  admin.initializeApp();
-}
-
-const db = admin.firestore();
+import { logger } from "./lib/logger";
+import { db } from "./lib/firebase";
 
 // --- CORS & Request Helpers ---
 
 const allowedOrigins = new Set([
   "https://realness-score.web.app",
-  "http://localhost:5173"
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:5175",
 ]);
 
 const applyCors = (req: functions.https.Request, res: functions.Response) => {
@@ -66,14 +62,14 @@ export const initCasConfig = functions.https.onRequest(async (req, res) => {
     const force = req.query.force === "true";
 
     if (!doc.exists || force) {
-      functions.logger.info("Seeding default CAS configuration...");
+      logger.info("Seeding default CAS configuration...");
       await docRef.set(defaultConfig);
       res.json({ message: "Seeded default configuration." });
     } else {
       res.json({ message: "Configuration already exists." });
     }
   } catch (error) {
-    functions.logger.error("Error seeding config:", error);
+    logger.error("Error seeding config:", error);
     res.status(500).json({ message: "Error seeding config" });
   }
 });
@@ -90,7 +86,7 @@ export const getCasConfig = functions.https.onRequest(async (req, res) => {
     }
     res.json(doc.data());
   } catch (error) {
-    functions.logger.error("Error getting config:", error);
+    logger.error("Error getting config:", error);
     res.status(500).json({ message: "Error retrieving config" });
   }
 });
@@ -106,6 +102,7 @@ export const updateCasConfig = functions.https.onRequest(async (req, res) => {
     res.json({ success: true });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    logger.error("Error updating config:", error);
     res.status(400).json({ message });
   }
 });
@@ -120,7 +117,7 @@ export const calculateTerrainScore = functions.https.onRequest(async (req, res) 
     const config = doc.exists ? (doc.data() as CASConfiguration) : defaultConfig;
     res.json(calculateTerrainScoreUtil(answers, config));
   } catch (error) {
-    functions.logger.error("Error calculating score:", error);
+    logger.error("Error calculating score:", error);
     res.status(500).json({ message: "Error calculating score" });
   }
 });
@@ -136,6 +133,7 @@ export const createSituation = functions.https.onRequest(async (req, res) => {
     res.json(created);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    logger.error("Error creating situation:", error);
     res.status(400).json({ message });
   }
 });
@@ -154,6 +152,7 @@ export const updateSituation = functions.https.onRequest(async (req, res) => {
     res.json({ success: true });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    logger.error("Error updating situation:", error);
     res.status(400).json({ message });
   }
 });
@@ -172,6 +171,7 @@ export const deleteSituation = functions.https.onRequest(async (req, res) => {
     res.json({ success: true });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    logger.error("Error deleting situation:", error);
     res.status(400).json({ message });
   }
 });
@@ -184,13 +184,14 @@ export const getSituations = functions.https.onRequest(async (req, res) => {
     const list = await situations.getSituations();
     res.json(list);
   } catch (error) {
-    functions.logger.error("Error getting situations:", error);
+    logger.error("Error getting situations:", error);
     res.status(500).json({ message: "Error retrieving situations" });
   }
 });
 
 // --- Image Generation Functions ---
 
+// Queue an image generation job (uses BullMQ if REDIS_URL is set)
 export const generateArchetypeImage = functions.https.onRequest(async (req, res) => {
   if (applyCors(req, res)) return;
   if (!requireMethod(req, res, ["POST"])) return;
@@ -211,12 +212,13 @@ export const generateArchetypeImage = functions.https.onRequest(async (req, res)
     
     res.json(result);
   } catch (error) {
-    functions.logger.error("Error creating image job:", error);
+    logger.error("Error creating image job:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ message });
   }
 });
 
+// Get job status
 export const getImageJobStatus = functions.https.onRequest(async (req, res) => {
   if (applyCors(req, res)) return;
   if (!requireMethod(req, res, ["GET"])) return;
@@ -232,17 +234,41 @@ export const getImageJobStatus = functions.https.onRequest(async (req, res) => {
     const status = await imageGeneration.getJobStatus(jobId);
     res.json(status);
   } catch (error) {
-    functions.logger.error("Error getting job status:", error);
+    logger.error("Error getting job status:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
     res.status(500).json({ message });
   }
 });
+
+// Process a specific job (called by BullMQ worker or Cloud Tasks)
+export const processImageJob = functions
+  .runWith({ timeoutSeconds: 540, memory: "2GB" }) // 9 min timeout, 2GB RAM
+  .https.onRequest(async (req, res) => {
+    if (applyCors(req, res)) return;
+    if (!requireMethod(req, res, ["POST"])) return;
+    
+    try {
+      const { jobId } = req.body || {};
+      
+      if (!jobId) {
+        res.status(400).json({ message: "Missing jobId" });
+        return;
+      }
+      
+      const result = await imageGeneration.processJobDirectly(jobId);
+      res.json(result);
+    } catch (error) {
+      logger.error("Error processing image job:", error);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ message });
+    }
+  });
 
 // Scheduled cleanup of old jobs (runs daily)
 export const cleanupImageJobs = functions.pubsub
   .schedule("every 24 hours")
   .onRun(async () => {
     const deleted = await imageGeneration.cleanupOldJobs(48);
-    functions.logger.info(`Cleaned up ${deleted} old image generation jobs`);
+    logger.info(`Cleaned up ${deleted} old image generation jobs`);
     return null;
   });

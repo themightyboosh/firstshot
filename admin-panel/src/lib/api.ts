@@ -1,8 +1,19 @@
-import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, writeBatch, onSnapshot } from 'firebase/firestore';
+import type { Unsubscribe } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './firebase';
 import type { CASConfiguration, Situation, ScoringResult, Answers, SavedConfigSet, PromptElementsConfig } from './types';
 import { defaultConfig } from './defaultConfig';
+
+// Job status type for image generation
+export interface ImageJobStatus {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  imageUrl?: string;
+  error?: string;
+  archetypeId: string;
+  queuePosition?: number;
+}
 
 // API base URL - uses environment variable or defaults to production
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 
@@ -83,12 +94,30 @@ export const firestoreApi = {
     const docRef = doc(db, 'cas_config_sets', id);
     
     const existingDoc = await getDoc(docRef);
+    
+    // Ensure archetypes preserve image data when saving
+    const configWithImages = {
+      ...configSet.config,
+      archetypes: configSet.config.archetypes.map(arch => ({
+        ...arch,
+        // Explicitly include image fields to ensure they're saved
+        imageUrl: arch.imageUrl || null,
+        imageDescription: arch.imageDescription || null,
+      }))
+    };
+    
     const data: SavedConfigSet = {
       ...configSet,
+      config: configWithImages,
       id,
       createdAt: existingDoc.exists() ? existingDoc.data().createdAt : now,
       updatedAt: now,
     };
+    
+    console.log('Saving config set with images:', data.config.archetypes.map(a => ({
+      id: a.id,
+      hasImage: !!a.imageUrl
+    })));
     
     await setDoc(docRef, data);
     return id;
@@ -109,11 +138,29 @@ export const firestoreApi = {
     
     await batch.commit();
     
-    // Also update the main config to use this set
+    // Also update the main config to use this set (including images!)
     const activeDoc = await getDoc(doc(db, 'cas_config_sets', id));
     if (activeDoc.exists()) {
       const configSet = activeDoc.data() as SavedConfigSet;
-      await this.saveConfig(configSet.config);
+      
+      // Ensure archetypes with images are preserved
+      const configWithImages = {
+        ...configSet.config,
+        archetypes: configSet.config.archetypes.map(arch => ({
+          ...arch,
+          // Preserve image URLs from the config set
+          imageUrl: arch.imageUrl || undefined,
+          imageDescription: arch.imageDescription || undefined,
+        }))
+      };
+      
+      console.log('Activating config with images:', configWithImages.archetypes.map(a => ({
+        id: a.id,
+        name: a.name,
+        hasImage: !!a.imageUrl
+      })));
+      
+      await this.saveConfig(configWithImages);
     }
   }
 };
@@ -251,10 +298,49 @@ export const archetypeImageApi = {
     });
   },
 
-  // Check job status
+  // Check job status (one-time fetch)
   async getJobStatus(jobId: string): Promise<{ status: string; imageUrl?: string; error?: string }> {
     return apiFetch<{ status: string; imageUrl?: string; error?: string }>(`getImageJobStatus?jobId=${jobId}`, {
       method: 'GET',
+    });
+  },
+
+  // Trigger processing for a job (Serverless coordination)
+  async triggerJobProcessing(jobId: string): Promise<{ success: boolean; imageUrl?: string }> {
+    // Note: This request is intentionally long-running (up to 9 mins)
+    // In a real browser, this might time out, but the Cloud Function keeps running.
+    // We catch the error but ignore timeouts since we rely on Firestore for status.
+    try {
+      return await apiFetch<{ success: boolean; imageUrl?: string }>('processImageJob', {
+        method: 'POST',
+        body: JSON.stringify({ jobId }),
+      });
+    } catch (err: unknown) {
+      // If it's a timeout (common), that's fine - the job is still running in the background function
+      console.log('Trigger request completed or timed out:', err);
+      return { success: false };
+    }
+  },
+
+  // Subscribe to job status updates (realtime)
+  // Returns an unsubscribe function
+  subscribeToJob(jobId: string, onUpdate: (status: ImageJobStatus) => void): Unsubscribe {
+    const jobRef = doc(db, 'image_generation_jobs', jobId);
+    
+    return onSnapshot(jobRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        onUpdate({
+          id: snapshot.id,
+          status: data.status,
+          imageUrl: data.imageUrl,
+          error: data.error,
+          archetypeId: data.archetypeId,
+          queuePosition: data.queuePosition,
+        });
+      }
+    }, (error) => {
+      console.error('Job subscription error:', error);
     });
   }
 };

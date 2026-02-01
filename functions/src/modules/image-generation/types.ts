@@ -6,6 +6,7 @@ export interface ImageGenerationJob {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   imageUrl?: string;
   error?: string;
+  queuePosition?: number; // Position in queue (1 = next up)
   createdAt: string;
   updatedAt: string;
 }
@@ -20,4 +21,5 @@ export interface JobStatusResponse {
   status: string;
   imageUrl?: string;
   error?: string;
+  queuePosition?: number; // Position in queue for pending jobs
 }
