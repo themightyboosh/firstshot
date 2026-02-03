@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { Navigation } from "@/app/components/navigation";
-import { ArrowRight, CheckCircle, Loader2 } from "lucide-react";
+import { ArrowRight, CheckCircle, Loader2, Image as ImageIcon } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { dataApi, cmsApi, CMSItem } from "@/lib/api";
+import { getStoredAnswers } from "@/lib/archetypeStorage";
 
 interface Situation {
   id: string;
@@ -15,7 +16,8 @@ interface Situation {
 export function SituationSelectorScreen() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { answers } = location.state || {};
+  // Use stored answers as fallback if not passed via state (for returning users)
+  const answers = location.state?.answers || getStoredAnswers();
   
   const [selectedSituation, setSelectedSituation] = useState<string | null>(null);
   const [situations, setSituations] = useState<Situation[]>([]);
@@ -57,7 +59,7 @@ export function SituationSelectorScreen() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="w-full max-w-3xl mx-auto"
+          className="w-full max-w-5xl mx-auto"
         >
           {/* Header */}
           <div className="text-center mb-8 md:mb-12">
@@ -69,22 +71,22 @@ export function SituationSelectorScreen() {
             </p>
           </div>
 
-          {/* Situations List */}
-          <div className="space-y-3 mb-8">
+          {/* Situations Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-8">
             {situations.map((situation, index) => {
               const isSelected = selectedSituation === situation.id;
 
               return (
                 <motion.button
                   key={situation.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.4, delay: index * 0.05 }}
                   onClick={() => setSelectedSituation(situation.id)}
-                  className={`w-full bg-slate-900/50 backdrop-blur-xl rounded-xl border-2 p-4 md:p-5 transition-all duration-300 group text-left relative ${
+                  className={`relative bg-slate-900/50 backdrop-blur-xl rounded-2xl border-2 overflow-hidden transition-all duration-300 group text-left ${
                     isSelected
-                      ? "border-purple-500 shadow-lg shadow-purple-500/50"
-                      : "border-slate-800 hover:border-slate-700"
+                      ? "border-purple-500 shadow-lg shadow-purple-500/50 scale-[1.02]"
+                      : "border-slate-800 hover:border-slate-700 hover:scale-[1.01]"
                   }`}
                 >
                   {/* Selection Indicator */}
@@ -95,50 +97,69 @@ export function SituationSelectorScreen() {
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0, opacity: 0 }}
                         transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                        className="absolute top-4 right-4 w-6 h-6 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center z-10"
+                        className="absolute top-3 right-3 w-7 h-7 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center z-10 shadow-lg"
                       >
-                        <CheckCircle className="w-4 h-4 text-white" />
+                        <CheckCircle className="w-5 h-5 text-white" />
                       </motion.div>
                     )}
                   </AnimatePresence>
 
-                  <div className="flex items-start gap-4 pr-8">
-                    {/* Image */}
-                    <motion.div
-                      whileHover={{ scale: 1.05 }}
-                      className={`flex-shrink-0 w-16 h-16 md:w-20 md:h-20 rounded-xl overflow-hidden bg-slate-800 border border-slate-700`}
-                    >
-                      {situation.squarePngUrl ? (
-                        <img 
-                          src={situation.squarePngUrl} 
-                          alt={situation.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">No Img</div>
-                      )}
-                    </motion.div>
-
-                    {/* Text Content */}
-                    <div className="flex-1 min-w-0 py-1">
-                      <h3
-                        className={`text-lg font-bold mb-1 transition-colors ${
-                          isSelected ? "text-purple-300" : "text-white group-hover:text-purple-200"
+                  {/* Image */}
+                  <div className="aspect-[4/3] w-full overflow-hidden bg-slate-800">
+                    {situation.squarePngUrl ? (
+                      <img 
+                        src={situation.squarePngUrl} 
+                        alt={situation.name}
+                        className={`w-full h-full object-cover transition-all duration-500 ${
+                          isSelected ? "scale-105 brightness-110" : "group-hover:scale-105 brightness-90 group-hover:brightness-100"
                         }`}
-                      >
-                        {situation.name}
-                      </h3>
-                      <p
-                        className={`text-sm leading-relaxed transition-colors ${
-                          isSelected
-                            ? "text-slate-300"
-                            : "text-slate-400 group-hover:text-slate-300"
-                        }`}
-                      >
-                        {situation.shortDescription}
-                      </p>
-                    </div>
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-slate-600">
+                        <ImageIcon className="w-12 h-12" />
+                      </div>
+                    )}
+                    
+                    {/* Gradient Overlay */}
+                    <div className={`absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent transition-opacity ${
+                      isSelected ? "opacity-70" : "opacity-60 group-hover:opacity-50"
+                    }`} />
                   </div>
+
+                  {/* Text Content - Overlaid on bottom */}
+                  <div className="absolute bottom-0 left-0 right-0 p-4">
+                    <h3
+                      className={`text-lg md:text-xl font-bold mb-1 transition-colors ${
+                        isSelected ? "text-purple-300" : "text-white group-hover:text-purple-200"
+                      }`}
+                    >
+                      {situation.name}
+                    </h3>
+                    <p
+                      className={`text-sm leading-relaxed line-clamp-2 transition-colors ${
+                        isSelected
+                          ? "text-slate-300"
+                          : "text-slate-400 group-hover:text-slate-300"
+                      }`}
+                    >
+                      {situation.shortDescription}
+                    </p>
+                  </div>
+
+                  {/* Selected Glow Effect */}
+                  {isSelected && (
+                    <motion.div
+                      animate={{
+                        opacity: [0.3, 0.5, 0.3],
+                      }}
+                      transition={{
+                        duration: 2,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                      className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-pink-500/20 pointer-events-none"
+                    />
+                  )}
                 </motion.button>
               );
             })}

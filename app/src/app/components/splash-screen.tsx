@@ -25,7 +25,7 @@ export function SplashScreen() {
           animate={{ opacity: 1 }}
           className="flex flex-col items-center gap-4"
         >
-          <Logo size="large" showText={false} />
+          <Logo size="large" />
           <div className="w-2 h-2 bg-purple-400 rounded-full animate-ping" />
         </motion.div>
       </div>
@@ -40,7 +40,7 @@ export function SplashScreen() {
         transition={{ duration: 0.5, ease: "easeOut" }}
         className="flex flex-col items-center gap-8 text-center max-w-md w-full"
       >
-        <Logo size="large" showText={false} />
+        <Logo size="large" />
         
         <div className="space-y-4">
           <motion.h1 

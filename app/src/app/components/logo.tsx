@@ -1,43 +1,35 @@
-import { Zap } from "lucide-react";
+import { useGlobalSettings } from "@/lib/GlobalSettingsContext";
 
 interface LogoProps {
   size?: "small" | "medium" | "large";
-  showText?: boolean;
+  className?: string;
 }
 
-export function Logo({ size = "medium", showText = true }: LogoProps) {
+export function Logo({ size = "medium", className }: LogoProps) {
+  const { appLogoUrl, appLogoSvg } = useGlobalSettings();
+  
   const sizeClasses = {
-    small: "w-8 h-8",
-    medium: "w-12 h-12",
-    large: "w-20 h-20",
+    small: "h-[calc(4rem-4px)]", // Header height (h-16 = 64px) minus 4px padding
+    medium: "h-12",
+    large: "h-20",
   };
 
-  const textSizeClasses = {
-    small: "text-xl",
-    medium: "text-2xl",
-    large: "text-4xl",
-  };
+  const finalClass = className || sizeClasses[size];
 
-  const iconSizeClasses = {
-    small: "w-5 h-5",
-    medium: "w-7 h-7",
-    large: "w-12 h-12",
-  };
-
-  return (
-    <div className="flex items-center gap-3">
-      <div
-        className={`${sizeClasses[size]} bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg`}
-      >
-        <Zap className={`${iconSizeClasses[size]} text-white fill-white`} />
-      </div>
-      {showText && (
-        <span
-          className={`${textSizeClasses[size]} font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent`}
-        >
-          FirstShot
-        </span>
-      )}
-    </div>
-  );
+  // Priority: SVG code > URL > nothing
+  if (appLogoSvg) {
+    return (
+      <div 
+        className={`${finalClass} [&>svg]:h-full [&>svg]:w-auto`}
+        dangerouslySetInnerHTML={{ __html: appLogoSvg }}
+      />
+    );
+  }
+  
+  if (appLogoUrl) {
+    return <img src={appLogoUrl} alt="Logo" className={`${finalClass} w-auto object-contain`} />;
+  }
+  
+  // No logo configured - return nothing
+  return null;
 }

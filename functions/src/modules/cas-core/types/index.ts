@@ -25,6 +25,9 @@ export interface Archetype {
   primaryTerrain: TerrainType | 'Disorganized';
   secondaryTerrain: TerrainType | null;
   profileData: ArchetypeProfile;
+  description?: string;
+  imageUrl?: string;
+  imageDescription?: string;
 }
 
 /**
@@ -65,4 +68,12 @@ export interface CASConfiguration {
   };
   questions: Question[];
   archetypes: Archetype[];
+}
+
+export interface Affect {
+  id: string;
+  name: string;
+  description: string;
+  interactionGuidance: string;
+  iconUrl: string;
 }

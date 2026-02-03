@@ -1,8 +1,8 @@
-import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, query, where, writeBatch, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc, writeBatch, onSnapshot } from 'firebase/firestore';
 import type { Unsubscribe } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './firebase';
-import type { CASConfiguration, Situation, ScoringResult, Answers, SavedConfigSet, PromptElementsConfig } from './types';
+import type { CASConfiguration, Situation, Affect, CMSItem, User, UsageStats, UserUsageStats, FeedbackItem, UserResponse, ScoringResult, Answers, SavedConfigSet, GlobalSettingsConfig } from './types';
 import { defaultConfig } from './defaultConfig';
 
 // Job status type for image generation
@@ -11,8 +11,10 @@ export interface ImageJobStatus {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   imageUrl?: string;
   error?: string;
-  archetypeId: string;
+  archetypeId?: string;
+  situationId?: string;
   queuePosition?: number;
+  prompt?: string;
 }
 
 // API base URL - uses environment variable or defaults to production
@@ -36,6 +38,7 @@ async function apiFetch<T>(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    console.error('API Error Response:', errorData);
     throw new Error(errorData.message || `Request failed: ${response.status}`);
   }
 
@@ -69,8 +72,12 @@ export const firestoreApi = {
 
   async saveConfig(config: CASConfiguration): Promise<void> {
     const docRef = doc(db, 'cas_config', 'main');
+    
+    // Sanitize config to remove undefined values
+    const sanitizedConfig = JSON.parse(JSON.stringify(config));
+    
     await setDoc(docRef, {
-      ...config,
+      ...sanitizedConfig,
       meta: {
         ...config.meta,
         lastUpdated: new Date().toISOString().split('T')[0],
@@ -101,14 +108,17 @@ export const firestoreApi = {
       archetypes: configSet.config.archetypes.map(arch => ({
         ...arch,
         // Explicitly include image fields to ensure they're saved
-        imageUrl: arch.imageUrl || null,
-        imageDescription: arch.imageDescription || null,
+        imageUrl: arch.imageUrl || undefined,
+        imageDescription: arch.imageDescription || undefined,
       }))
     };
     
+    // Sanitize to remove undefined values
+    const sanitizedConfig = JSON.parse(JSON.stringify(configWithImages));
+    
     const data: SavedConfigSet = {
       ...configSet,
-      config: configWithImages,
+      config: sanitizedConfig,
       id,
       createdAt: existingDoc.exists() ? existingDoc.data().createdAt : now,
       updatedAt: now,
@@ -244,27 +254,28 @@ export const situationsApi = {
     }),
 };
 
-// Prompt Elements API
-export const promptElementsApi = {
-  // Get prompt elements config
-  async getConfig(): Promise<PromptElementsConfig> {
-    const docRef = doc(db, 'prompt_elements', 'main');
+// Global Settings API
+export const globalSettingsApi = {
+  // Get global settings config
+  async getConfig(): Promise<GlobalSettingsConfig> {
+    const docRef = doc(db, 'global_settings', 'main');
     const docSnap = await getDoc(docRef);
     
     if (docSnap.exists()) {
-      return docSnap.data() as PromptElementsConfig;
+      return docSnap.data() as GlobalSettingsConfig;
     }
     
     // Return empty config if none exists
     return {
       stylePrompt: '',
+      appName: '',
       updatedAt: new Date().toISOString()
     };
   },
 
-  // Save prompt elements config
-  async saveConfig(config: PromptElementsConfig): Promise<void> {
-    const docRef = doc(db, 'prompt_elements', 'main');
+  // Save global settings config
+  async saveConfig(config: GlobalSettingsConfig): Promise<void> {
+    const docRef = doc(db, 'global_settings', 'main');
     await setDoc(docRef, {
       ...config,
       updatedAt: new Date().toISOString()
@@ -272,18 +283,112 @@ export const promptElementsApi = {
   }
 };
 
-// Archetype Image API
-export const archetypeImageApi = {
-  // Upload an image for an archetype
-  async uploadImage(archetypeId: string, file: File): Promise<string> {
-    const filename = `${archetypeId}_${Date.now()}_${file.name}`;
-    const storageRef = ref(storage, `archetype-images/${filename}`);
+// Responses API
+export const responsesApi = {
+  getAll: () => apiFetch<UserResponse[]>('getUserResponses', { method: 'GET' }),
+  clear: () => apiFetch<{ success: boolean; deletedCount: number }>('clearResponses', { method: 'POST' }),
+};
+
+// Feedback API
+export const feedbackApi = {
+  getAll: () => apiFetch<FeedbackItem[]>('getFeedback', { method: 'GET' }),
+  submit: (data: Partial<FeedbackItem>) => apiFetch<{ success: boolean }>('submitFeedback', { method: 'POST', body: JSON.stringify(data) }),
+  clear: () => apiFetch<{ success: boolean; deletedCount: number }>('clearFeedback', { method: 'POST' }),
+};
+
+// Usage API
+export const usageApi = {
+  getStats: () => apiFetch<UsageStats>('getUsageStats', { method: 'GET' }),
+  getUserStats: (uid: string) => apiFetch<UserUsageStats>(`getUserUsageStats?uid=${uid}`, { method: 'GET' }),
+};
+
+// Users API
+export const usersApi = {
+  getAll: () => apiFetch<{ users: User[] }>('getUsers', { method: 'GET' }),
+  
+  create: (data: Partial<User> & { password?: string; generateInviteLink?: boolean }) => 
+    apiFetch<{ success: boolean; user: User; inviteLink?: string }>('createUser', { 
+      method: 'POST', 
+      body: JSON.stringify(data) 
+    }),
+    
+  generateResetLink: (uid: string) =>
+    apiFetch<{ success: boolean; link: string }>('generateUserResetLink', {
+      method: 'POST',
+      body: JSON.stringify({ uid }),
+    }),
+    
+  updateRole: (uid: string, role: string) => 
+    apiFetch<{ success: boolean }>('updateUserRole', { 
+      method: 'POST', 
+      body: JSON.stringify({ uid, role }) 
+    }),
+    
+  delete: (uid: string) => 
+    apiFetch<{ success: boolean }>('deleteUser', { 
+      method: 'POST', 
+      body: JSON.stringify({ uid }) 
+    }),
+};
+
+// CMS API
+export const cmsApi = {
+  getAll: () => apiFetch<CMSItem[]>('getCMSItems', { method: 'GET' }),
+  
+  create: (item: Partial<CMSItem>) =>
+    apiFetch<CMSItem>('createCMSItem', {
+      method: 'POST',
+      body: JSON.stringify(item),
+    }),
+  
+  update: (item: Partial<CMSItem>) =>
+    apiFetch<{ success: boolean }>('updateCMSItem', {
+      method: 'POST',
+      body: JSON.stringify(item),
+    }),
+  
+  delete: (id: string) =>
+    apiFetch<{ success: boolean }>('deleteCMSItem', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    }),
+};
+
+// Affects API
+export const affectsApi = {
+  getAll: () => apiFetch<Affect[]>('getAffects', { method: 'GET' }),
+  
+  update: (affect: Affect) =>
+    apiFetch<{ success: boolean }>('updateAffect', {
+      method: 'POST',
+      body: JSON.stringify(affect),
+    }),
+    
+  reset: () => 
+    apiFetch<{ success: boolean }>('resetAffects', { method: 'POST' }),
+};
+
+// Gemini API
+export const geminiApi = {
+  runPrompt: (prompt: string) =>
+    apiFetch<{ success: boolean; text: string }>('runGeminiPrompt', {
+      method: 'POST',
+      body: JSON.stringify({ prompt }),
+    }),
+};
+
+// Image Generation API
+export const imageGenerationApi = {
+  // Upload an image (generic)
+  async uploadImage(id: string, file: File, folder: 'archetype-images' | 'situation-images' | 'affect-icons' | 'cms-images' | 'global-assets' = 'archetype-images'): Promise<string> {
+    const filename = `${id}_${Date.now()}_${file.name}`;
+    const storageRef = ref(storage, `${folder}/${filename}`);
     await uploadBytes(storageRef, file);
     return await getDownloadURL(storageRef);
   },
 
-  // Queue image generation job
-  async generateImage(archetypeId: string, archetypeName: string, imageDescription: string, stylePrompt: string): Promise<{ jobId: string }> {
+  // Queue image generation job for Archetype
+  async generateArchetypeImage(archetypeId: string, archetypeName: string, imageDescription: string, stylePrompt: string): Promise<{ jobId: string }> {
     const fullPrompt = stylePrompt 
       ? `${imageDescription}. ${stylePrompt}`
       : imageDescription;
@@ -298,6 +403,38 @@ export const archetypeImageApi = {
     });
   },
 
+  // Queue image generation job for Situation
+  async generateSituationImage(situationId: string, situationName: string, imageDescription: string, stylePrompt: string): Promise<{ jobId: string }> {
+    const fullPrompt = stylePrompt 
+      ? `${imageDescription}. ${stylePrompt}`
+      : imageDescription;
+    
+    return apiFetch<{ jobId: string }>('generateArchetypeImage', { // Reusing endpoint as it is generic now
+      method: 'POST',
+      body: JSON.stringify({
+        situationId,
+        situationName,
+        prompt: fullPrompt
+      }),
+    });
+  },
+
+  // Queue image generation job for CMS
+  async generateCMSImage(cmsId: string, cmsName: string, imageDescription: string, stylePrompt: string): Promise<{ jobId: string }> {
+    const fullPrompt = stylePrompt 
+      ? `${imageDescription}. ${stylePrompt}`
+      : imageDescription;
+    
+    return apiFetch<{ jobId: string }>('generateArchetypeImage', {
+      method: 'POST',
+      body: JSON.stringify({
+        cmsId,
+        cmsName,
+        prompt: fullPrompt
+      }),
+    });
+  },
+
   // Check job status (one-time fetch)
   async getJobStatus(jobId: string): Promise<{ status: string; imageUrl?: string; error?: string }> {
     return apiFetch<{ status: string; imageUrl?: string; error?: string }>(`getImageJobStatus?jobId=${jobId}`, {
@@ -307,23 +444,25 @@ export const archetypeImageApi = {
 
   // Trigger processing for a job (Serverless coordination)
   async triggerJobProcessing(jobId: string): Promise<{ success: boolean; imageUrl?: string }> {
-    // Note: This request is intentionally long-running (up to 9 mins)
-    // In a real browser, this might time out, but the Cloud Function keeps running.
-    // We catch the error but ignore timeouts since we rely on Firestore for status.
     try {
       return await apiFetch<{ success: boolean; imageUrl?: string }>('processImageJob', {
         method: 'POST',
         body: JSON.stringify({ jobId }),
       });
     } catch (err: unknown) {
-      // If it's a timeout (common), that's fine - the job is still running in the background function
       console.log('Trigger request completed or timed out:', err);
       return { success: false };
     }
   },
 
+  // Clear image generation queue
+  async clearQueue(): Promise<{ success: boolean; count: number }> {
+    return apiFetch<{ success: boolean; count: number }>('clearImageJobQueue', {
+      method: 'POST',
+    });
+  },
+
   // Subscribe to job status updates (realtime)
-  // Returns an unsubscribe function
   subscribeToJob(jobId: string, onUpdate: (status: ImageJobStatus) => void): Unsubscribe {
     const jobRef = doc(db, 'image_generation_jobs', jobId);
     
@@ -336,11 +475,20 @@ export const archetypeImageApi = {
           imageUrl: data.imageUrl,
           error: data.error,
           archetypeId: data.archetypeId,
+          situationId: data.situationId,
           queuePosition: data.queuePosition,
+          prompt: data.prompt,
         });
       }
     }, (error) => {
       console.error('Job subscription error:', error);
     });
   }
+};
+
+// Alias for backward compatibility
+export const archetypeImageApi = {
+  ...imageGenerationApi,
+  uploadImage: (id: string, file: File) => imageGenerationApi.uploadImage(id, file, 'archetype-images'),
+  generateImage: imageGenerationApi.generateArchetypeImage,
 };

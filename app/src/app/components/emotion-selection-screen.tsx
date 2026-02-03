@@ -4,6 +4,7 @@ import { Navigation } from "@/app/components/navigation";
 import { ArrowRight, CheckCircle, Loader2, Image as ImageIcon } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { dataApi, cmsApi, CMSItem } from "@/lib/api";
+import { getStoredAnswers } from "@/lib/archetypeStorage";
 
 interface Affect {
   id: string;
@@ -15,12 +16,15 @@ interface Affect {
 export function EmotionSelectionScreen() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { situationId, answers } = location.state || {};
+  const { situationId } = location.state || {};
+  // Use stored answers as fallback for returning users
+  const answers = location.state?.answers || getStoredAnswers();
   
   const [selectedEmotion, setSelectedEmotion] = useState<string | null>(null);
   const [affects, setAffects] = useState<Affect[]>([]);
   const [header, setHeader] = useState<CMSItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hoveredAffect, setHoveredAffect] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -73,85 +77,139 @@ export function EmotionSelectionScreen() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-8">
             {affects.map((affect, index) => {
               const isSelected = selectedEmotion === affect.id;
+              const isHovered = hoveredAffect === affect.id;
               
               return (
-                <motion.button
+                <motion.div
                   key={affect.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: index * 0.05 }}
-                  onClick={() => setSelectedEmotion(affect.id)}
-                  className={`relative bg-slate-900/50 backdrop-blur-xl rounded-2xl border-2 p-6 md:p-8 transition-all duration-300 group ${
-                    isSelected
-                      ? "border-purple-500 shadow-lg shadow-purple-500/50"
-                      : "border-slate-800 hover:border-slate-700"
-                  }`}
+                  className="relative h-56 md:h-64"
+                  style={{ perspective: "1000px" }}
+                  onMouseEnter={() => setHoveredAffect(affect.id)}
+                  onMouseLeave={() => setHoveredAffect(null)}
                 >
-                  {/* Selection Indicator */}
-                  <AnimatePresence>
-                    {isSelected && (
-                      <motion.div
-                        initial={{ scale: 0, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        exit={{ scale: 0, opacity: 0 }}
-                        transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                        className="absolute top-3 right-3 w-6 h-6 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center"
-                      >
-                        <CheckCircle className="w-4 h-4 text-white" />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Icon */}
-                  <div className="mb-4 flex justify-center">
-                    <motion.div
-                      whileHover={{ scale: 1.1, rotate: 5 }}
-                      whileTap={{ scale: 0.95 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 15 }}
-                      className="w-24 h-24 md:w-32 md:h-32 relative flex items-center justify-center bg-black/50 rounded-full overflow-hidden"
-                    >
-                      {affect.iconUrl ? (
-                        <img
-                          src={affect.iconUrl}
-                          alt={affect.name}
-                          className={`w-full h-full object-cover transition-all duration-300 ${
-                            isSelected ? "brightness-110" : "brightness-90 group-hover:brightness-100"
-                          }`}
-                        />
-                      ) : (
-                        <ImageIcon className="w-12 h-12 text-slate-500" />
-                      )}
-                      
-                      {/* Animated Glow Effect */}
-                      {isSelected && (
-                        <motion.div
-                          animate={{
-                            opacity: [0.5, 0.8, 0.5],
-                            scale: [1, 1.1, 1],
-                          }}
-                          transition={{
-                            duration: 2,
-                            repeat: Infinity,
-                            ease: "easeInOut",
-                          }}
-                          className="absolute inset-0 bg-gradient-to-br from-purple-500/30 to-pink-500/30 rounded-full blur-xl -z-10"
-                        />
-                      )}
-                    </motion.div>
-                  </div>
-
-                  {/* Label */}
-                  <p
-                    className={`text-base md:text-lg font-semibold text-center transition-colors ${
-                      isSelected ? "text-purple-300" : "text-slate-300 group-hover:text-white"
-                    }`}
+                  {/* Card Container with 3D flip */}
+                  <motion.div
+                    className="relative w-full h-full"
+                    animate={{ rotateY: isHovered ? 180 : 0 }}
+                    transition={{ duration: 0.6, ease: "easeOut" }}
+                    style={{ transformStyle: "preserve-3d" }}
                   >
-                    {affect.name}
-                  </p>
-                  
-                  {/* Optional Description Tooltip or Subtext */}
-                  {/* <p className="text-xs text-slate-500 text-center mt-2 line-clamp-2">{affect.description}</p> */}
-                </motion.button>
+                    {/* Front of Card */}
+                    <button
+                      onClick={() => setSelectedEmotion(affect.id)}
+                      className={`absolute inset-0 bg-slate-900/50 backdrop-blur-xl rounded-2xl border-2 p-6 md:p-8 transition-all duration-300 flex flex-col items-center justify-center ${
+                        isSelected
+                          ? "border-purple-500 shadow-lg shadow-purple-500/50"
+                          : "border-slate-800"
+                      }`}
+                      style={{ backfaceVisibility: "hidden" }}
+                    >
+                      {/* Selection Indicator */}
+                      <AnimatePresence>
+                        {isSelected && (
+                          <motion.div
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0, opacity: 0 }}
+                            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                            className="absolute top-3 right-3 w-6 h-6 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center z-10"
+                          >
+                            <CheckCircle className="w-4 h-4 text-white" />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Icon */}
+                      <div className="mb-4 flex justify-center">
+                        <div className="w-20 h-20 md:w-28 md:h-28 relative flex items-center justify-center bg-slate-800 rounded-full overflow-hidden">
+                          {affect.iconUrl ? (
+                            <img
+                              src={affect.iconUrl}
+                              alt={affect.name}
+                              className={`w-full h-full object-cover transition-all duration-300 ${
+                                isSelected ? "brightness-110" : "brightness-90"
+                              }`}
+                            />
+                          ) : (
+                            <ImageIcon className="w-12 h-12 text-slate-500" />
+                          )}
+                          
+                          {/* Animated Glow Effect */}
+                          {isSelected && (
+                            <motion.div
+                              animate={{
+                                opacity: [0.5, 0.8, 0.5],
+                                scale: [1, 1.1, 1],
+                              }}
+                              transition={{
+                                duration: 2,
+                                repeat: Infinity,
+                                ease: "easeInOut",
+                              }}
+                              className="absolute inset-0 bg-gradient-to-br from-purple-500/30 to-pink-500/30 rounded-full blur-xl -z-10"
+                            />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Label */}
+                      <p
+                        className={`text-base md:text-lg font-semibold text-center transition-colors ${
+                          isSelected ? "text-purple-300" : "text-slate-300"
+                        }`}
+                      >
+                        {affect.name}
+                      </p>
+                    </button>
+
+                    {/* Back of Card - Description */}
+                    <button
+                      onClick={() => setSelectedEmotion(affect.id)}
+                      className={`absolute inset-0 bg-gradient-to-br from-slate-900 via-purple-900/50 to-slate-900 backdrop-blur-xl rounded-2xl border-2 p-5 md:p-6 flex flex-col items-center justify-center ${
+                        isSelected
+                          ? "border-purple-500 shadow-lg shadow-purple-500/50"
+                          : "border-purple-500/50"
+                      }`}
+                      style={{ 
+                        backfaceVisibility: "hidden",
+                        transform: "rotateY(180deg)"
+                      }}
+                    >
+                      {/* Selection Indicator on back */}
+                      <AnimatePresence>
+                        {isSelected && (
+                          <motion.div
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0, opacity: 0 }}
+                            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                            className="absolute top-3 right-3 w-6 h-6 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center z-10"
+                          >
+                            <CheckCircle className="w-4 h-4 text-white" />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Affect Name */}
+                      <h3 className="text-base md:text-lg font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-2">
+                        {affect.name}
+                      </h3>
+                      
+                      {/* Description */}
+                      <p className="text-xs md:text-sm text-slate-300 text-center leading-relaxed">
+                        {affect.description || "No description available"}
+                      </p>
+
+                      {/* Tap to select hint */}
+                      <p className="absolute bottom-3 text-xs text-purple-400/70 font-medium">
+                        Tap to select
+                      </p>
+                    </button>
+                  </motion.div>
+                </motion.div>
               );
             })}
           </div>

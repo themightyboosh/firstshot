@@ -68,7 +68,8 @@ export function LikertQuestionsScreen() {
   const handleNext = () => {
     if (isLastQuestion) {
       console.log("Assessment Complete. Answers:", answers);
-      navigate("/situation", { state: { answers } });
+      // Navigate to archetype reveal screen to show their archetype
+      navigate("/archetype-reveal", { state: { answers } });
     } else {
       setCurrentQuestionIndex(prev => prev + 1);
       setSelectionStep('first');
@@ -80,7 +81,7 @@ export function LikertQuestionsScreen() {
       {/* Header */}
       <div className="border-b border-slate-800 bg-slate-900/30 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <Logo size="small" showText={true} />
+          <Logo size="small" />
           <div className="text-sm text-slate-400">
             Question {currentQuestionIndex + 1} of {questions.length}
           </div>
@@ -109,7 +110,7 @@ export function LikertQuestionsScreen() {
             <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">
               {currentQuestion.text}
             </h2>
-            <p className="text-purple-300 font-medium">
+            <p className="text-purple-300 font-bold text-xl md:text-2xl mt-4 animate-pulse">
               {selectionStep === 'first' && !currentAnswer.first && "Which is MOST like you?"}
               {selectionStep === 'second' && currentAnswer.first && !currentAnswer.second && "Which is NEXT most like you?"}
               {selectionStep === 'repulsion' && currentAnswer.second && !currentAnswer.repulsion && "Which is LEAST like you?"}
@@ -150,22 +151,19 @@ export function LikertQuestionsScreen() {
               );
             })}
           </div>
-          
-          <div className="mt-6 flex justify-center space-x-4">
-             <button 
-               onClick={resetQuestion}
-               className="text-slate-400 hover:text-white underline text-sm"
-             >
-               Reset Selection
-             </button>
-          </div>
 
         </motion.div>
       </div>
 
       {/* Navigation Footer */}
       <div className="border-t border-slate-800 bg-slate-900/30 backdrop-blur-sm p-4">
-        <div className="container mx-auto flex justify-end">
+        <div className="container mx-auto flex justify-between items-center">
+          <button
+            onClick={resetQuestion}
+            className="flex items-center gap-2 px-6 py-3 rounded-lg bg-slate-700/50 text-white font-semibold hover:bg-slate-600/50 transition-all border border-slate-600"
+          >
+            <span>Reset Selection</span>
+          </button>
           <button
             onClick={handleNext}
             disabled={!isQuestionComplete}

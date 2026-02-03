@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
-import { Save, Loader2, PlayCircle, Plus, Trash2, GripVertical, RefreshCw, BarChart3, FolderOpen, Check, Star, Shuffle, Download, Upload, Sparkles, Image } from 'lucide-react';
-import { casApi, firestoreApi, archetypeImageApi, promptElementsApi } from '../lib/api';
-import type { ImageJobStatus } from '../lib/api';
+import { Save, Loader2, Plus, Trash2, GripVertical, RefreshCw, BarChart3, FolderOpen, Check, Star, Download, Upload, Sparkles } from 'lucide-react';
+import { casApi, firestoreApi, archetypeImageApi, globalSettingsApi } from '../lib/api';
 import { defaultConfig } from '../lib/defaultConfig';
-import type { CASConfiguration, Question, Archetype, ScoringResult, TerrainType, RankedAnswer, QuestionOption, SavedConfigSet } from '../lib/types';
+import type { CASConfiguration, Question, Archetype, TerrainType, QuestionOption, SavedConfigSet } from '../lib/types';
+import { ImageGenerationPreview } from '../components/ImageGenerationPreview';
 
-type TabType = 'questions' | 'archetypes' | 'stats' | 'configurations' | 'simulator';
+type TabType = 'questions' | 'archetypes' | 'stats' | 'configurations';
 
 const TERRAIN_OPTIONS: TerrainType[] = ['Anxious', 'Avoidant', 'Secure', 'Disorganized'];
 
@@ -33,11 +33,6 @@ export default function CASConfig() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   
-  // Simulator State
-  const [simRankedAnswers, setSimRankedAnswers] = useState<Record<string, Partial<RankedAnswer>>>({});
-  const [simResult, setSimResult] = useState<ScoringResult | null>(null);
-  const [simulating, setSimulating] = useState(false);
-
   // Configurations State
   const [configSets, setConfigSets] = useState<SavedConfigSet[]>([]);
   const [loadingConfigSets, setLoadingConfigSets] = useState(false);
@@ -47,6 +42,7 @@ export default function CASConfig() {
   
   // Import/Export
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const archetypeImportRef = useRef<HTMLInputElement>(null);
   
   // Archetype Image State
   const [generatingImageFor, setGeneratingImageFor] = useState<string | null>(null);
@@ -67,7 +63,7 @@ export default function CASConfig() {
 
   const loadStylePrompt = async () => {
     try {
-      const promptConfig = await promptElementsApi.getConfig();
+      const promptConfig = await globalSettingsApi.getConfig();
       setStylePrompt(promptConfig.stylePrompt || '');
     } catch (err) {
       console.error('Failed to load style prompt:', err);
@@ -241,53 +237,6 @@ export default function CASConfig() {
     }
   };
 
-  const runSimulation = async (answersOverride?: Record<string, RankedAnswer>) => {
-    setSimulating(true);
-    try {
-      const answers = answersOverride || Object.fromEntries(
-        Object.entries(simRankedAnswers)
-          .filter(([, ans]) => ans.first && ans.second && ans.repulsion)
-          .map(([qId, ans]) => [qId, ans as RankedAnswer])
-      );
-      
-      const result = await casApi.calculateScore(answers);
-      setSimResult(result);
-    } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : 'Simulation failed');
-    } finally {
-      setSimulating(false);
-    }
-  };
-
-  const randomizeAndCalculate = async () => {
-    if (!config) return;
-    
-    const randomAnswers: Record<string, RankedAnswer> = {};
-    
-    config.questions.forEach(q => {
-      // Shuffle options indices
-      const indices = [0, 1, 2, 3];
-      for (let i = indices.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [indices[i], indices[j]] = [indices[j], indices[i]];
-      }
-      
-      // Assign first 3 shuffled options as first, second, repulsion
-      randomAnswers[q.id] = {
-        first: q.options[indices[0]].id,
-        second: q.options[indices[1]].id,
-        repulsion: q.options[indices[2]].id,
-      };
-    });
-    
-    // Update state to show the selections
-    setSimRankedAnswers(randomAnswers);
-    
-    // Run simulation with the random answers
-    await runSimulation(randomAnswers);
-  };
-
   // === QUESTION CRUD ===
   
   const addQuestion = () => {
@@ -371,6 +320,79 @@ export default function CASConfig() {
     const newArchetypes = [...config.archetypes];
     newArchetypes[idx].profileData[field] = value;
     setConfig({ ...config, archetypes: newArchetypes });
+  };
+
+  // Export archetypes as JSON
+  const exportArchetypes = () => {
+    if (!config) return;
+    const data = JSON.stringify(config.archetypes, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `archetypes-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setSuccessMsg('Archetypes exported successfully');
+    setTimeout(() => setSuccessMsg(null), 3000);
+  };
+
+  // Import archetypes from JSON (update existing by name match)
+  const handleArchetypeImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !config) return;
+
+    try {
+      const text = await file.text();
+      const imported: Archetype[] = JSON.parse(text);
+      
+      if (!Array.isArray(imported)) throw new Error('Invalid format: expected array of archetypes');
+
+      // Create a map of existing archetypes by name (case-insensitive)
+      const existingMap = new Map(config.archetypes.map(a => [a.name.toLowerCase().trim(), a]));
+      
+      let updatedCount = 0;
+      let createdCount = 0;
+      const newArchetypes = [...config.archetypes];
+
+      for (const item of imported) {
+        if (!item.name) continue;
+
+        const existing = existingMap.get(item.name.toLowerCase().trim());
+        
+        if (existing) {
+          // Update existing archetype
+          const idx = newArchetypes.findIndex(a => a.id === existing.id);
+          if (idx !== -1) {
+            newArchetypes[idx] = {
+              ...newArchetypes[idx],
+              ...item,
+              id: existing.id, // Preserve existing ID
+            };
+            updatedCount++;
+          }
+        } else {
+          // Add new archetype with generated ID
+          const newArchetype: Archetype = {
+            ...item,
+            id: item.id || `archetype_${generateId()}`,
+          };
+          newArchetypes.push(newArchetype);
+          createdCount++;
+        }
+      }
+
+      setConfig({ ...config, archetypes: newArchetypes });
+      setSuccessMsg(`Import complete: ${createdCount} created, ${updatedCount} updated. Remember to save changes.`);
+      setTimeout(() => setSuccessMsg(null), 5000);
+    } catch (err) {
+      console.error(err);
+      setError('Failed to import: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    } finally {
+      if (archetypeImportRef.current) archetypeImportRef.current.value = '';
+    }
   };
 
   // === CONFIGURATION SETS ===
@@ -468,6 +490,17 @@ export default function CASConfig() {
 
   // === ARCHETYPE IMAGE HELPERS ===
 
+  const handleClearQueue = async () => {
+    if (!confirm('Are you sure you want to clear the entire image generation queue? This will cancel all pending jobs.')) return;
+    try {
+      const result = await archetypeImageApi.clearQueue();
+      setSuccessMsg(`Queue cleared. ${result.count} jobs removed.`);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err) {
+      setError('Failed to clear queue');
+    }
+  };
+
   const handleArchetypeImageUpload = async (archetypeId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !config) return;
@@ -504,6 +537,17 @@ export default function CASConfig() {
 
     setGeneratingImageFor(archetype.id);
     setError(null);
+    
+    // Clear the old image immediately so user knows generation is starting
+    if (config) {
+      setConfig({
+        ...config,
+        archetypes: config.archetypes.map(arch =>
+          arch.id === archetype.id ? { ...arch, imageUrl: undefined } : arch
+        )
+      });
+    }
+    
     try {
       const result = await archetypeImageApi.generateImage(
         archetype.id,
@@ -512,7 +556,7 @@ export default function CASConfig() {
         stylePrompt
       );
       
-      // Update archetype with job ID
+      // Update archetype with job ID - the ImageGenerationPreview component handles the subscription
       if (config) {
         setConfig({
           ...config,
@@ -522,77 +566,44 @@ export default function CASConfig() {
         });
       }
       
-      setSuccessMsg(`Image generation queued. Rate-limited to stay under quota...`);
-      setTimeout(() => setSuccessMsg(null), 5000);
+      setSuccessMsg('Image generation started...');
       
       // Trigger processing immediately
       archetypeImageApi.triggerJobProcessing(result.jobId).catch(err => {
-          console.error('Trigger processing failed:', err);
-          // If trigger fails, the job might sit in pending forever unless another trigger picks it up.
-          // We should probably inform the user if the trigger request failed.
-          setError('Failed to start image generation process. Please try again.');
-          setGeneratingImageFor(null);
+        console.error('Trigger processing failed:', err);
       });
       
-      // Subscribe to realtime updates
-      subscribeToJobUpdates(archetype.id, result.jobId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start image generation');
       setGeneratingImageFor(null);
     }
   };
 
-  // Subscribe to job status changes via Firestore realtime listener
-  const subscribeToJobUpdates = (archetypeId: string, jobId: string) => {
-    const unsubscribe = archetypeImageApi.subscribeToJob(jobId, (status: ImageJobStatus) => {
-      console.log(`Job ${jobId} status: ${status.status}, queue position: ${status.queuePosition || 'N/A'}`);
-      
-      if (status.status === 'completed' && status.imageUrl) {
-        // Update archetype with generated image - instant refresh!
-        setConfig(prev => prev ? {
-          ...prev,
-          archetypes: prev.archetypes.map(arch =>
-            arch.id === archetypeId 
-              ? { ...arch, imageUrl: status.imageUrl, imageJobId: undefined } 
-              : arch
-          )
-        } : null);
-        
-        setSuccessMsg('Image generated successfully! Remember to save changes.');
-        setTimeout(() => setSuccessMsg(null), 5000);
-        setGeneratingImageFor(null);
-        unsubscribe(); // Stop listening
-        return;
-      }
-      
-      if (status.status === 'failed') {
-        setError(`Image generation failed: ${status.error || 'Unknown error'}`);
-        // Clear job ID
-        setConfig(prev => prev ? {
-          ...prev,
-          archetypes: prev.archetypes.map(arch =>
-            arch.id === archetypeId ? { ...arch, imageJobId: undefined } : arch
-          )
-        } : null);
-        setGeneratingImageFor(null);
-        unsubscribe(); // Stop listening
-        return;
-      }
-      
-      // Status is 'pending' or 'processing' - keep listening and update UI
-      if (status.status === 'processing') {
-        setSuccessMsg('Generating image with AI (this can take 30-60s)...');
-      } else if (status.status === 'pending') {
-        const queueMsg = status.queuePosition ? ` (Position: ${status.queuePosition})` : '';
-        setSuccessMsg(`Job queued${queueMsg}. Waiting for worker...`);
-      }
-    });
+  const handleArchetypeImageGenerated = (archetypeId: string, imageUrl: string) => {
+    setConfig(prev => prev ? {
+      ...prev,
+      archetypes: prev.archetypes.map(arch =>
+        arch.id === archetypeId 
+          ? { ...arch, imageUrl, imageJobId: undefined } 
+          : arch
+      )
+    } : null);
     
-    // Safety timeout - unsubscribe after 10 minutes
-    setTimeout(() => {
-      unsubscribe();
-      setGeneratingImageFor(null);
-    }, 600000);
+    setGeneratingImageFor(null);
+    setSuccessMsg('Image generated successfully! Remember to save changes.');
+    setTimeout(() => setSuccessMsg(null), 5000);
+  };
+
+  const handleArchetypeImageError = (archetypeId: string, errorMsg: string) => {
+    setConfig(prev => prev ? {
+      ...prev,
+      archetypes: prev.archetypes.map(arch =>
+        arch.id === archetypeId ? { ...arch, imageJobId: undefined } : arch
+      )
+    } : null);
+    
+    setGeneratingImageFor(null);
+    setError(`Image generation failed: ${errorMsg}`);
   };
 
   const removeArchetypeImage = (archetypeId: string) => {
@@ -603,27 +614,6 @@ export default function CASConfig() {
         arch.id === archetypeId ? { ...arch, imageUrl: undefined, imageJobId: undefined } : arch
       )
     });
-  };
-
-  // === SIMULATOR HELPERS ===
-
-  const setRankedSelection = (questionId: string, rank: keyof RankedAnswer, optionId: string) => {
-    const current = simRankedAnswers[questionId] || {};
-    const updated: Partial<RankedAnswer> = { ...current };
-    if (updated.first === optionId) updated.first = undefined;
-    if (updated.second === optionId) updated.second = undefined;
-    if (updated.repulsion === optionId) updated.repulsion = undefined;
-    updated[rank] = optionId;
-    setSimRankedAnswers({ ...simRankedAnswers, [questionId]: updated });
-  };
-
-  const getRankForOption = (questionId: string, optionId: string): keyof RankedAnswer | null => {
-    const answer = simRankedAnswers[questionId];
-    if (!answer) return null;
-    if (answer.first === optionId) return 'first';
-    if (answer.second === optionId) return 'second';
-    if (answer.repulsion === optionId) return 'repulsion';
-    return null;
   };
 
   // === STATS CALCULATIONS ===
@@ -752,11 +742,6 @@ export default function CASConfig() {
   }
 
   const stats = calculateStats();
-  const rankLabels: Record<keyof RankedAnswer, { label: string; color: string }> = {
-    first: { label: '1st', color: 'bg-green-500 text-white' },
-    second: { label: '2nd', color: 'bg-yellow-500 text-white' },
-    repulsion: { label: 'Least', color: 'bg-red-500 text-white' },
-  };
 
   return (
     <div className="h-full flex flex-col space-y-4">
@@ -769,6 +754,14 @@ export default function CASConfig() {
           </p>
         </div>
         <div className="flex items-center space-x-2">
+          <button
+            onClick={handleClearQueue}
+            className="flex items-center space-x-2 bg-red-100 text-red-700 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-200"
+            title="Clear Image Queue"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span className="hidden sm:inline">Clear Queue</span>
+          </button>
           <button
             onClick={loadConfig}
             disabled={loading}
@@ -803,7 +796,7 @@ export default function CASConfig() {
 
       {/* Tabs */}
       <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg w-fit">
-        {(['questions', 'archetypes', 'stats', 'configurations', 'simulator'] as const).map(tab => (
+        {(['questions', 'archetypes', 'stats', 'configurations'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -902,17 +895,43 @@ export default function CASConfig() {
       {/* Archetypes Editor */}
       {activeTab === 'archetypes' && (
         <div className="space-y-6">
-          <div className="flex justify-between items-center bg-gray-50 p-4 rounded-lg">
+          <div className="flex flex-wrap justify-between items-center gap-4 bg-gray-50 p-4 rounded-lg">
             <p className="text-sm text-gray-600">
               {config.archetypes.length} archetypes. Each maps to a primary + secondary terrain.
             </p>
-            <button
-              onClick={addArchetype}
-              className="flex items-center space-x-2 bg-green-600 text-white px-5 py-3 rounded-lg hover:bg-green-700 font-bold"
-            >
-              <Plus className="w-5 h-5" />
-              <span>+ ADD ARCHETYPE</span>
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <input
+                ref={archetypeImportRef}
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={handleArchetypeImport}
+              />
+              <button
+                onClick={() => archetypeImportRef.current?.click()}
+                className="flex items-center space-x-2 border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50"
+                title="Import Archetypes JSON"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Import</span>
+              </button>
+              <button
+                onClick={exportArchetypes}
+                disabled={config.archetypes.length === 0}
+                className="flex items-center space-x-2 border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                title="Export Archetypes JSON"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export</span>
+              </button>
+              <button
+                onClick={addArchetype}
+                className="flex items-center space-x-2 bg-green-600 text-white px-5 py-2 rounded-lg hover:bg-green-700 font-bold"
+              >
+                <Plus className="w-5 h-5" />
+                <span>Add Archetype</span>
+              </button>
+            </div>
           </div>
 
           {config.archetypes.length === 0 ? (
@@ -984,6 +1003,21 @@ export default function CASConfig() {
                     </div>
                   ))}
                   
+                  {/* User-Facing Description */}
+                  <div className="border-t pt-4 mt-4">
+                    <label className="block text-xs font-bold text-emerald-600 uppercase mb-1">
+                      Archetype Description (shown to users)
+                    </label>
+                    <textarea
+                      rows={4}
+                      className="w-full p-3 border border-emerald-200 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-emerald-50"
+                      placeholder="Write a user-friendly description of this archetype that will be shown when users discover their type..."
+                      value={arch.description || ''}
+                      onChange={(e) => updateArchetype(idx, { description: e.target.value })}
+                    />
+                    <p className="text-xs text-gray-400 mt-1">This description is shown to users after they complete the assessment and discover their archetype.</p>
+                  </div>
+
                   {/* Image Description for AI Prompts */}
                   <div className="border-t pt-4 mt-4">
                     <label className="block text-xs font-bold text-purple-600 uppercase mb-1">
@@ -1005,38 +1039,23 @@ export default function CASConfig() {
                       Archetype Image
                     </label>
                     <div className="flex items-start space-x-4">
-                      {/* Image Preview */}
-                      <div className="w-32 h-32 bg-gray-100 rounded-lg overflow-hidden shrink-0 border-2 border-dashed border-gray-300">
-                        {arch.imageUrl ? (
-                          <div className="relative w-full h-full group">
-                            <img
-                              key={`${arch.id}-${arch.imageUrl}`}
-                              src={arch.imageUrl}
-                              alt={arch.name}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                console.warn(`Failed to load image for ${arch.name}:`, arch.imageUrl);
-                                (e.target as HTMLImageElement).src = '';
-                              }}
-                              loading="lazy"
-                            />
-                            <button
-                              onClick={() => removeArchetypeImage(arch.id)}
-                              className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Remove image"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ) : arch.imageJobId ? (
-                          <div className="w-full h-full flex flex-col items-center justify-center text-indigo-500">
-                            <Loader2 className="w-8 h-8 animate-spin mb-1" />
-                            <span className="text-xs">Generating...</span>
-                          </div>
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-400">
-                            <Image className="w-8 h-8" />
-                          </div>
+                      {/* Image Preview with Generation Status */}
+                      <div className="relative">
+                        <ImageGenerationPreview
+                          imageUrl={arch.imageUrl}
+                          jobId={arch.imageJobId}
+                          onImageGenerated={(url) => handleArchetypeImageGenerated(arch.id, url)}
+                          onError={(err) => handleArchetypeImageError(arch.id, err)}
+                          size="md"
+                        />
+                        {arch.imageUrl && !arch.imageJobId && (
+                          <button
+                            onClick={() => removeArchetypeImage(arch.id)}
+                            className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 hover:opacity-100 transition-opacity"
+                            title="Remove image"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
                         )}
                       </div>
 
@@ -1051,7 +1070,7 @@ export default function CASConfig() {
                         />
                         <button
                           onClick={() => archetypeImageRefs.current[arch.id]?.click()}
-                          disabled={uploadingImageFor === arch.id}
+                          disabled={uploadingImageFor === arch.id || generatingImageFor === arch.id}
                           className="flex items-center space-x-2 px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
                         >
                           {uploadingImageFor === arch.id ? (
@@ -1330,182 +1349,6 @@ export default function CASConfig() {
         </div>
       )}
 
-      {/* Simulator */}
-      {activeTab === 'simulator' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold">Simulate Answers</h3>
-              <button
-                onClick={randomizeAndCalculate}
-                disabled={simulating}
-                className="flex items-center space-x-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 font-medium"
-              >
-                <Shuffle className="w-4 h-4" />
-                <span>Randomize & Calculate</span>
-              </button>
-            </div>
-
-            <div className="bg-indigo-50 p-3 rounded-lg text-sm text-indigo-800">
-              <strong>Ranked Choice:</strong> Click options to assign: 
-              <span className="mx-1 px-1.5 py-0.5 bg-green-500 text-white rounded text-xs">1st</span> Most like me (+2pts),
-              <span className="mx-1 px-1.5 py-0.5 bg-yellow-500 text-white rounded text-xs">2nd</span> Next most (+1pt),
-              <span className="mx-1 px-1.5 py-0.5 bg-red-500 text-white rounded text-xs">Least</span> Repulsion signal
-            </div>
-
-            {config.questions.length === 0 ? (
-              <div className="bg-gray-50 p-8 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
-                No questions to simulate. Add questions first or seed the database.
-              </div>
-            ) : (
-              <>
-                {config.questions.map((q: Question) => (
-                  <div key={q.id} className="bg-white p-4 rounded-lg border">
-                    <p className="font-medium mb-3">{q.text}</p>
-                    
-                    <div className="space-y-2">
-                      {q.options.map(opt => {
-                        const currentRank = getRankForOption(q.id, opt.id);
-                        const ranks: (keyof RankedAnswer)[] = ['first', 'second', 'repulsion'];
-                        const nextRank = currentRank 
-                          ? ranks[(ranks.indexOf(currentRank) + 1) % ranks.length]
-                          : 'first';
-
-                        return (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => {
-                              if (currentRank) {
-                                if (currentRank === 'repulsion') {
-                                  const updated = { ...simRankedAnswers[q.id] };
-                                  delete updated.repulsion;
-                                  setSimRankedAnswers({ ...simRankedAnswers, [q.id]: updated });
-                                } else {
-                                  setRankedSelection(q.id, nextRank, opt.id);
-                                }
-                              } else {
-                                setRankedSelection(q.id, 'first', opt.id);
-                              }
-                            }}
-                            className={`w-full text-left p-2 rounded-lg border-2 transition-all ${
-                              currentRank 
-                                ? 'border-indigo-300 bg-indigo-50' 
-                                : 'border-gray-200 hover:border-gray-300'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm">
-                                {opt.text} <span className="text-gray-400 text-xs">({opt.terrain})</span>
-                              </span>
-                              {currentRank && (
-                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${rankLabels[currentRank].color}`}>
-                                  {rankLabels[currentRank].label}
-                                </span>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-                
-                <button
-                  onClick={() => runSimulation()}
-                  disabled={simulating}
-                  className="w-full bg-indigo-600 text-white py-3 rounded-lg font-bold hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center space-x-2"
-                >
-                  {simulating ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <PlayCircle className="w-5 h-5" />
-                  )}
-                  <span>{simulating ? 'Calculating...' : 'Calculate Result'}</span>
-                </button>
-              </>
-            )}
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-lg font-bold">Result</h3>
-            {simResult ? (
-              <div className="bg-white p-6 rounded-xl shadow-lg border-t-4 border-indigo-600 sticky top-4">
-                <div className="mb-4">
-                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Archetype</span>
-                  <h2 className="text-2xl font-bold text-indigo-900">{simResult.archetype?.name || 'Unknown'}</h2>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                  <div>
-                    <span className="text-xs font-bold text-gray-400">Primary</span>
-                    <p className="font-medium">{simResult.primaryTerrain}</p>
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-gray-400">Secondary</span>
-                    <p className="font-medium">{simResult.secondaryTerrain || 'None'}</p>
-                  </div>
-                </div>
-
-                <div className="space-y-2 mb-4">
-                  <span className="text-xs font-bold text-gray-400">Attraction Scores</span>
-                  {(Object.entries(simResult.scores) as [TerrainType, number][]).map(([terrain, score]) => (
-                    <div key={terrain} className="flex items-center justify-between text-sm">
-                      <span>{terrain}</span>
-                      <div className="flex items-center space-x-2">
-                        <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-indigo-500"
-                            style={{ width: `${(score / 16) * 100}%` }}
-                          />
-                        </div>
-                        <span className="font-mono w-6 text-right">{score}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {simResult.repulsionScores && (
-                  <div className="space-y-2 mb-4">
-                    <span className="text-xs font-bold text-gray-400">Repulsion Scores</span>
-                    {(Object.entries(simResult.repulsionScores) as [TerrainType, number][]).map(([terrain, score]) => (
-                      <div key={terrain} className="flex items-center justify-between text-sm">
-                        <span>{terrain}</span>
-                        <div className="flex items-center space-x-2">
-                          <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-red-400"
-                              style={{ width: `${(score / 8) * 100}%` }}
-                            />
-                          </div>
-                          <span className="font-mono w-6 text-right">{score}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {simResult.flags && simResult.flags.length > 0 && (
-                  <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-100">
-                    <span className="text-xs font-bold text-yellow-700 block mb-1">System Flags</span>
-                    <div className="flex flex-wrap gap-1">
-                      {simResult.flags.map((flag: string) => (
-                        <span key={flag} className="px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded-full">
-                          {flag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="bg-gray-50 p-8 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
-                Click "Randomize & Calculate" or select options manually.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

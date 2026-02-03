@@ -21,6 +21,21 @@ service cloud.firestore {
     match /prompt_elements/{document=**} {
       allow read, write: if true;
     }
+
+    // Global Settings
+    match /global_settings/{document=**} {
+      allow read, write: if true;
+    }
+
+    // Affects
+    match /affects/{document=**} {
+      allow read, write: if true;
+    }
+
+    // CMS Content
+    match /cms_content/{document=**} {
+      allow read, write: if true;
+    }
     
     // Image Generation Jobs - allow read/write for admin
     match /image_generation_jobs/{document=**} {

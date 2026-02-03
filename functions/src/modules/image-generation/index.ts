@@ -4,6 +4,7 @@ import type { ImageGenerationJob, GenerateImageRequest, JobStatusResponse } from
 import { db, storage } from '../../lib/firebase';
 import { logger } from '../../lib/logger';
 import { queueService } from '../../lib/queue';
+import { logUsage } from '../usage';
 
 // Configuration
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'realness-score';
@@ -46,8 +47,11 @@ export async function createImageJob(request: GenerateImageRequest): Promise<{ j
   
   const job: ImageGenerationJob = {
     id: jobId,
+    // Support both archetype and situation
     archetypeId: request.archetypeId,
     archetypeName: request.archetypeName,
+    situationId: request.situationId,
+    situationName: request.situationName,
     prompt: request.prompt,
     status: 'pending',
     createdAt: new Date().toISOString(),
@@ -193,31 +197,54 @@ export async function processJobDirectly(jobId: string): Promise<{ success: bool
   try {
     const job = (await jobRef.get()).data() as ImageGenerationJob;
     logger.info(`Job ${jobId} generating with Imagen 4...`);
+    logger.info(`Prompt: "${job.prompt}"`);
     const imageBuffer = await generateImageWithImagen(job.prompt);
     
     logger.info(`Job ${jobId} uploading...`);
-    const imageUrl = await uploadToGCS(imageBuffer, job.archetypeId, job.archetypeName);
+    
+    // Determine upload path and ID
+    const entityId = job.archetypeId || job.situationId || 'unknown';
+    const entityType = job.archetypeId ? 'archetype' : (job.situationId ? 'situation' : 'unknown');
+    const entityName = job.archetypeName || job.situationName || 'unknown';
+    
+    const imageUrl = await uploadToGCS(imageBuffer, entityId, entityName, entityType);
     
     logger.info(`Job ${jobId} complete: ${imageUrl}`);
     await updateJobStatus(jobId, 'completed', { imageUrl });
+    
+    // Log Usage
+    await logUsage('image', 0.04, { jobId, entityId, entityType });
 
-    // AUTO-SAVE to CAS Config
+    // AUTO-SAVE LOGIC
     try {
-      const configRef = db.collection('cas_config').doc('main');
-      const configDoc = await configRef.get();
-      if (configDoc.exists) {
-        const config = configDoc.data() as any;
-        if (config.archetypes && Array.isArray(config.archetypes)) {
-           const updatedArchetypes = config.archetypes.map((a: any) => {
-             if (a.id === job.archetypeId) return { ...a, imageUrl: imageUrl };
-             return a;
-           });
-           await configRef.update({ archetypes: updatedArchetypes });
-           logger.info(`Auto-saved image to CAS Config for ${job.archetypeId}`);
+      if (job.archetypeId) {
+        // Update CAS Config
+        const configRef = db.collection('cas_config').doc('main');
+        const configDoc = await configRef.get();
+        if (configDoc.exists) {
+          const config = configDoc.data() as any;
+          if (config.archetypes && Array.isArray(config.archetypes)) {
+             const updatedArchetypes = config.archetypes.map((a: any) => {
+               if (a.id === job.archetypeId) return { ...a, imageUrl: imageUrl };
+               return a;
+             });
+             await configRef.update({ archetypes: updatedArchetypes });
+             logger.info(`Auto-saved image to CAS Config for Archetype ${job.archetypeId}`);
+          }
         }
+      } else if (job.situationId) {
+        // Update Situation
+        const situationRef = db.collection('situations').doc(job.situationId);
+        await situationRef.update({ squarePngUrl: imageUrl });
+        logger.info(`Auto-saved image to Situation ${job.situationId}`);
+  } else if (job.cmsId) {
+        // Update CMS Content
+        const cmsRef = db.collection('cms_content').doc(job.cmsId);
+        await cmsRef.update({ imageUrl: imageUrl });
+        logger.info(`Auto-saved image to CMS Item ${job.cmsId}`);
       }
     } catch (err) {
-      logger.error('Failed to auto-save to config:', err);
+      logger.error('Failed to auto-save result:', err);
     }
     
     return { success: true, imageUrl };
@@ -232,7 +259,6 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function generateImageWithImagen(prompt: string, retryCount = 0): Promise<Buffer> {
   const MAX_RETRIES = 3;
-  const BASE_DELAY = 30000;
   
   const { GoogleAuth } = await import('google-auth-library');
   const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
@@ -262,7 +288,7 @@ async function generateImageWithImagen(prompt: string, retryCount = 0): Promise<
   
   if (response.status === 429) {
     if (retryCount < MAX_RETRIES) {
-      const delay = BASE_DELAY * Math.pow(2, retryCount);
+      const delay = 30000 * Math.pow(2, retryCount);
       logger.warn(`Rate limited. Retry ${retryCount + 1}`);
       await sleep(delay);
       return generateImageWithImagen(prompt, retryCount + 1);
@@ -282,20 +308,41 @@ async function generateImageWithImagen(prompt: string, retryCount = 0): Promise<
   throw new Error('No image data in response');
 }
 
-async function uploadToGCS(imageBuffer: Buffer, archetypeId: string, archetypeName: string): Promise<string> {
+async function uploadToGCS(imageBuffer: Buffer, entityId: string, entityName: string, entityType: string = 'archetype'): Promise<string> {
   const bucket = storage.bucket(BUCKET_NAME);
-  const filename = `archetype-images/${archetypeId}_${Date.now()}.png`;
+  
+  let folder = 'archetype-images';
+  if (entityType === 'situation') folder = 'situation-images';
+  if (entityType === 'affect') folder = 'affect-icons';
+  if (entityType === 'cms') folder = 'cms-images';
+  
+  const filename = `${folder}/${entityId}_${Date.now()}.png`;
   const file = bucket.file(filename);
   
   await file.save(imageBuffer, {
     metadata: {
       contentType: 'image/png',
-      metadata: { archetypeId, archetypeName, generatedAt: new Date().toISOString(), model: IMAGEN_MODEL, provider: 'google' },
+      metadata: { 
+        entityId, 
+        entityName, 
+        entityType,
+        generatedAt: new Date().toISOString(), 
+        model: IMAGEN_MODEL, 
+        provider: 'google' 
+      },
     },
   });
   
   await file.makePublic();
   return `https://storage.googleapis.com/${BUCKET_NAME}/${filename}`;
+}
+
+export async function clearQueue(): Promise<number> {
+  const snapshot = await db.collection(JOBS_COLLECTION).get();
+  const batch = db.batch();
+  snapshot.docs.forEach(doc => batch.delete(doc.ref));
+  await batch.commit();
+  return snapshot.size;
 }
 
 export async function cleanupOldJobs(hoursOld = 48): Promise<number> {

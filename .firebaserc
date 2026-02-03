@@ -1,0 +1,18 @@
+{
+  "projects": {
+    "default": "realness-score"
+  },
+  "targets": {
+    "realness-score": {
+      "hosting": {
+        "app": [
+          "realness-score"
+        ],
+        "admin": [
+          "realness-score-admin"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

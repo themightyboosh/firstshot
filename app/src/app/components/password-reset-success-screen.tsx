@@ -17,7 +17,7 @@ export function PasswordResetSuccessScreen() {
         <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-800 p-8 shadow-2xl">
           {/* Logo */}
           <div className="flex justify-center mb-8">
-            <Logo size="medium" showText={true} />
+            <Logo size="large" />
           </div>
 
           {/* Success Icon */}

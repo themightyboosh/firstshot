@@ -1,15 +1,36 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Logo } from "@/app/components/logo";
-import { Menu, X, User, Settings, LogOut, Bell, HelpCircle } from "lucide-react";
+import { Menu, X, User, Settings, LogOut, RefreshCcw, Sparkles, Info } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+import { MyArchetypeModal } from "@/app/components/my-archetype-modal";
+import { hasStoredArchetype, clearStoredArchetype } from "@/lib/archetypeStorage";
+import { useGlobalSettings } from "@/lib/GlobalSettingsContext";
 
 export function Navigation() {
   const navigate = useNavigate();
+  const { appName } = useGlobalSettings();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isArchetypeModalOpen, setIsArchetypeModalOpen] = useState(false);
 
-  const handleLogout = () => {
+  const handleViewArchetype = () => {
+    setIsAccountMenuOpen(false);
+    setIsMobileMenuOpen(false);
+    setIsArchetypeModalOpen(true);
+  };
+
+  const handleRetakeProfile = () => {
+    clearStoredArchetype(); // Clear stored archetype before retaking
+    setIsAccountMenuOpen(false);
+    setIsMobileMenuOpen(false);
+    navigate("/assessment-intro");
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
     setIsAccountMenuOpen(false);
     setIsMobileMenuOpen(false);
     navigate("/login");
@@ -20,31 +41,13 @@ export function Navigation() {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/" className="flex-shrink-0">
-            <Logo size="small" showText={true} />
+          <Link to="/situation" className="flex-shrink-0 py-[2px]">
+            <Logo size="small" />
           </Link>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-6">
-            <Link
-              to="/questions"
-              className="text-slate-300 hover:text-white transition-colors"
-            >
-              Questions
-            </Link>
-            <Link
-              to="/content"
-              className="text-slate-300 hover:text-white transition-colors"
-            >
-              Content
-            </Link>
-            <Link
-              to="/results"
-              className="text-slate-300 hover:text-white transition-colors"
-            >
-              Results
-            </Link>
-
+            
             {/* Desktop Account Menu */}
             <div className="relative">
               <button
@@ -74,28 +77,35 @@ export function Navigation() {
                       transition={{ duration: 0.2 }}
                       className="absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50"
                     >
-                      <div className="p-4 border-b border-slate-700">
-                        <p className="text-white font-semibold">John Doe</p>
-                        <p className="text-sm text-slate-400">john@example.com</p>
-                      </div>
-                      
                       <div className="py-2">
-                        <button className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center gap-3">
-                          <User className="w-4 h-4" />
-                          Profile
+                        {hasStoredArchetype() && (
+                          <button 
+                            onClick={handleViewArchetype}
+                            className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center gap-3"
+                          >
+                            <Sparkles className="w-4 h-4" />
+                            My Archetype
+                          </button>
+                        )}
+                        <button 
+                          onClick={handleRetakeProfile}
+                          className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center gap-3"
+                        >
+                          <RefreshCcw className="w-4 h-4" />
+                          Retake Profile
                         </button>
                         <button className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center gap-3">
                           <Settings className="w-4 h-4" />
                           Settings
                         </button>
-                        <button className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center gap-3">
-                          <Bell className="w-4 h-4" />
-                          Notifications
-                        </button>
-                        <button className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center gap-3">
-                          <HelpCircle className="w-4 h-4" />
-                          Help
-                        </button>
+                        <Link
+                          to="/about"
+                          onClick={() => setIsAccountMenuOpen(false)}
+                          className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-700 hover:text-white transition-colors flex items-center gap-3"
+                        >
+                          <Info className="w-4 h-4" />
+                          About {appName || 'App'}
+                        </Link>
                       </div>
                       
                       <div className="border-t border-slate-700 py-2">
@@ -138,60 +148,36 @@ export function Navigation() {
               className="md:hidden overflow-hidden border-t border-slate-800"
             >
               <div className="py-4 space-y-1">
-                {/* User Info */}
-                <div className="px-4 py-3 bg-slate-800/50 rounded-lg mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                      <User className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <p className="text-white font-semibold">John Doe</p>
-                      <p className="text-xs text-slate-400">john@example.com</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Navigation Links */}
-                <Link
-                  to="/questions"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="block px-4 py-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors rounded-lg"
-                >
-                  Questions
-                </Link>
-                <Link
-                  to="/content"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="block px-4 py-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors rounded-lg"
-                >
-                  Content
-                </Link>
-                <Link
-                  to="/results"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="block px-4 py-2 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors rounded-lg"
-                >
-                  Results
-                </Link>
-
                 {/* Account Options */}
                 <div className="border-t border-slate-800 mt-3 pt-3 space-y-1">
-                  <button className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-800 hover:text-white transition-colors rounded-lg flex items-center gap-3">
-                    <User className="w-4 h-4" />
-                    Profile
+                  {hasStoredArchetype() && (
+                    <button 
+                      onClick={handleViewArchetype}
+                      className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-800 hover:text-white transition-colors rounded-lg flex items-center gap-3"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      My Archetype
+                    </button>
+                  )}
+                  <button 
+                    onClick={handleRetakeProfile}
+                    className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-800 hover:text-white transition-colors rounded-lg flex items-center gap-3"
+                  >
+                    <RefreshCcw className="w-4 h-4" />
+                    Retake Profile
                   </button>
                   <button className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-800 hover:text-white transition-colors rounded-lg flex items-center gap-3">
                     <Settings className="w-4 h-4" />
                     Settings
                   </button>
-                  <button className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-800 hover:text-white transition-colors rounded-lg flex items-center gap-3">
-                    <Bell className="w-4 h-4" />
-                    Notifications
-                  </button>
-                  <button className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-800 hover:text-white transition-colors rounded-lg flex items-center gap-3">
-                    <HelpCircle className="w-4 h-4" />
-                    Help
-                  </button>
+                  <Link
+                    to="/about"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="w-full px-4 py-2 text-left text-slate-300 hover:bg-slate-800 hover:text-white transition-colors rounded-lg flex items-center gap-3"
+                  >
+                    <Info className="w-4 h-4" />
+                    About {appName || 'App'}
+                  </Link>
                 </div>
 
                 {/* Logout */}
@@ -209,6 +195,12 @@ export function Navigation() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* My Archetype Modal */}
+      <MyArchetypeModal 
+        isOpen={isArchetypeModalOpen} 
+        onClose={() => setIsArchetypeModalOpen(false)} 
+      />
     </nav>
   );
 }

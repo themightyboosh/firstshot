@@ -1,7 +1,11 @@
 export interface ImageGenerationJob {
   id: string;
-  archetypeId: string;
-  archetypeName: string;
+  archetypeId?: string;
+  archetypeName?: string;
+  situationId?: string;
+  situationName?: string;
+  cmsId?: string;
+  cmsName?: string;
   prompt: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   imageUrl?: string;
@@ -12,8 +16,12 @@ export interface ImageGenerationJob {
 }
 
 export interface GenerateImageRequest {
-  archetypeId: string;
-  archetypeName: string;
+  archetypeId?: string;
+  archetypeName?: string;
+  situationId?: string;
+  situationName?: string;
+  cmsId?: string;
+  cmsName?: string;
   prompt: string;
 }
 

@@ -4,7 +4,7 @@ import { Logo } from "@/app/components/logo";
 import { LoadingSpinner } from "@/app/components/loading-spinner";
 import { Mail, Lock, ArrowRight } from "lucide-react";
 import { motion } from "motion/react";
-import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, createUserWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, createUserWithEmailAndPassword, sendEmailVerification } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
 export function LoginScreen() {
@@ -22,11 +22,13 @@ export function LoginScreen() {
 
     try {
       if (isSignUp) {
-        await createUserWithEmailAndPassword(auth, email, password);
+        const userCred = await createUserWithEmailAndPassword(auth, email, password);
+        await sendEmailVerification(userCred.user);
+        alert("Account created! Please check your email for a verification link.");
       } else {
         await signInWithEmailAndPassword(auth, email, password);
       }
-      navigate("/questions"); // Go to Assessment first
+      navigate("/assessment-intro");
     } catch (err: any) {
       console.error(err);
       setError(err.message.replace('Firebase: ', ''));
@@ -39,7 +41,7 @@ export function LoginScreen() {
     try {
         const provider = new GoogleAuthProvider();
         await signInWithPopup(auth, provider);
-        navigate("/questions");
+        navigate("/assessment-intro");
     } catch (err: any) {
         console.error(err);
         setError(err.message.replace('Firebase: ', ''));
@@ -65,7 +67,7 @@ export function LoginScreen() {
       >
         <div className="bg-slate-900/50 backdrop-blur-xl rounded-2xl border border-slate-800 p-8 shadow-2xl">
           <div className="flex justify-center mb-8">
-            <Logo size="medium" showText={true} />
+            <Logo size="large" />
           </div>
 
           <h1 className="text-2xl font-bold text-white text-center mb-2">

@@ -10,6 +10,9 @@ import { ForgotPasswordScreen } from "@/app/components/forgot-password-screen";
 import { CheckEmailScreen } from "@/app/components/check-email-screen";
 import { ResetPasswordScreen } from "@/app/components/reset-password-screen";
 import { PasswordResetSuccessScreen } from "@/app/components/password-reset-success-screen";
+import { AssessmentIntroScreen } from "@/app/components/assessment-intro-screen";
+import { ArchetypeRevealScreen } from "@/app/components/archetype-reveal-screen";
+import { AboutScreen } from "@/app/components/about-screen";
 import { RequireAuth } from "@/app/components/require-auth";
 
 export const router = createBrowserRouter([
@@ -38,12 +41,20 @@ export const router = createBrowserRouter([
     Component: PasswordResetSuccessScreen,
   },
   {
+    path: "/assessment-intro",
+    element: <RequireAuth><AssessmentIntroScreen /></RequireAuth>,
+  },
+  {
     path: "/situation",
     element: <RequireAuth><SituationSelectorScreen /></RequireAuth>,
   },
   {
     path: "/questions",
     element: <RequireAuth><LikertQuestionsScreen /></RequireAuth>,
+  },
+  {
+    path: "/archetype-reveal",
+    element: <RequireAuth><ArchetypeRevealScreen /></RequireAuth>,
   },
   {
     path: "/emotions",
@@ -56,5 +67,9 @@ export const router = createBrowserRouter([
   {
     path: "/results",
     element: <RequireAuth><ResultsScreen /></RequireAuth>,
+  },
+  {
+    path: "/about",
+    element: <RequireAuth><AboutScreen /></RequireAuth>,
   },
 ]);

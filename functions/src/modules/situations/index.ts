@@ -7,6 +7,7 @@ export interface Situation {
   shortDescription: string;
   longDescription: string;
   promptFragment: string;
+  imageDescription?: string;
 }
 
 const COLLECTION_NAME = "situations";
@@ -40,6 +41,11 @@ export function validateSituation(data: unknown): asserts data is Omit<Situation
     throw new Error('Image URL must be a string');
   }
 
+  // imageDescription is optional but must be a string if provided
+  if (situation.imageDescription !== undefined && typeof situation.imageDescription !== 'string') {
+    throw new Error('Image description must be a string');
+  }
+
   // Sanitize string lengths to prevent abuse
   if (situation.name.length > 200) {
     throw new Error('Name must be 200 characters or less');
@@ -56,6 +62,9 @@ export function validateSituation(data: unknown): asserts data is Omit<Situation
   if (situation.squarePngUrl && (situation.squarePngUrl as string).length > 2000) {
     throw new Error('Image URL must be 2000 characters or less');
   }
+  if (situation.imageDescription && (situation.imageDescription as string).length > 2000) {
+    throw new Error('Image description must be 2000 characters or less');
+  }
 }
 
 export const createSituation = async (data: unknown): Promise<Situation> => {
@@ -67,6 +76,7 @@ export const createSituation = async (data: unknown): Promise<Situation> => {
     longDescription: (data as Situation).longDescription.trim(),
     promptFragment: (data as Situation).promptFragment.trim(),
     squarePngUrl: ((data as Situation).squarePngUrl || '').trim(),
+    imageDescription: ((data as Situation).imageDescription || '').trim(),
   };
   
   const docRef = await db.collection(COLLECTION_NAME).add(situationData);
@@ -129,6 +139,16 @@ export const updateSituation = async (id: string, data: Partial<Situation>): Pro
       throw new Error('Image URL must be 2000 characters or less');
     }
     updateData.squarePngUrl = data.squarePngUrl.trim();
+  }
+
+  if (data.imageDescription !== undefined) {
+    if (typeof data.imageDescription !== 'string') {
+      throw new Error('Image description must be a string');
+    }
+    if (data.imageDescription.length > 2000) {
+      throw new Error('Image description must be 2000 characters or less');
+    }
+    updateData.imageDescription = data.imageDescription.trim();
   }
 
   if (Object.keys(updateData).length === 0) {
