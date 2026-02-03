@@ -1,0 +1,29 @@
+/**
+ * FONT CONFIGURATION
+ * 
+ * To swap the font family for the entire FirstShot template:
+ * 1. Change the --font-family value below
+ * 2. Import your custom font (Google Fonts, Adobe Fonts, etc.) at the top of this file
+ * 
+ * Examples:
+ * - System font stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif
+ * - Google Font: "Inter", sans-serif (after importing)
+ * - Custom font: "YourFont", sans-serif
+ */
+
+/* Example: Google Fonts import (uncomment and modify as needed) */
+/* @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'); */
+
+:root {
+  /**
+   * ROOT FONT FAMILY
+   * This single variable controls the font for the entire application.
+   * Change this value to swap fonts globally.
+   */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Apply root font to all elements */
+* {
+  font-family: var(--font-family);
+}
