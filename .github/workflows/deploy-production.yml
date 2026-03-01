@@ -55,12 +55,22 @@ jobs:
       - name: Set up service account
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_PRODUCTION }}' > /tmp/gcloud-key.json
 
-      - name: Deploy to Firebase (Production)
+      - name: Deploy App to Firebase (Production)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_PRODUCTION }}
           projectId: realness-score
+          target: app
+          channelId: live
+
+      - name: Deploy Admin to Firebase (Production)
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_PRODUCTION }}
+          projectId: realness-score
+          target: admin
           channelId: live
 
       - name: Deploy Functions & Rules (Production)

@@ -56,12 +56,22 @@ jobs:
       - name: Set up service account
         run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_STAGING }}' > /tmp/gcloud-key.json
 
-      - name: Deploy to Firebase (Staging)
+      - name: Deploy App to Firebase (Staging)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STAGING }}
           projectId: realness-score-staging
+          target: app
+          channelId: live
+
+      - name: Deploy Admin to Firebase (Staging)
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STAGING }}
+          projectId: realness-score-staging
+          target: admin
           channelId: live
 
       - name: Deploy Functions & Rules (Staging)
