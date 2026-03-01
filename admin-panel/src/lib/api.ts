@@ -393,6 +393,9 @@ export const imageGenerationApi = {
       ? `${imageDescription}. ${stylePrompt}`
       : imageDescription;
     
+    console.log(`[Image Generation] Archetype: ${archetypeName}`);
+    console.log(`[Image Generation] Full Prompt:`, fullPrompt);
+    
     return apiFetch<{ jobId: string }>('generateArchetypeImage', {
       method: 'POST',
       body: JSON.stringify({
@@ -409,7 +412,10 @@ export const imageGenerationApi = {
       ? `${imageDescription}. ${stylePrompt}`
       : imageDescription;
     
-    return apiFetch<{ jobId: string }>('generateArchetypeImage', { // Reusing endpoint as it is generic now
+    console.log(`[Image Generation] Situation: ${situationName}`);
+    console.log(`[Image Generation] Full Prompt:`, fullPrompt);
+    
+    return apiFetch<{ jobId: string }>('generateArchetypeImage', {
       method: 'POST',
       body: JSON.stringify({
         situationId,
@@ -425,11 +431,33 @@ export const imageGenerationApi = {
       ? `${imageDescription}. ${stylePrompt}`
       : imageDescription;
     
+    console.log(`[Image Generation] CMS Item: ${cmsName}`);
+    console.log(`[Image Generation] Full Prompt:`, fullPrompt);
+    
     return apiFetch<{ jobId: string }>('generateArchetypeImage', {
       method: 'POST',
       body: JSON.stringify({
         cmsId,
         cmsName,
+        prompt: fullPrompt
+      }),
+    });
+  },
+
+  // Queue image generation job for Affect
+  async generateAffectImage(affectId: string, affectName: string, imageDescription: string, stylePrompt: string): Promise<{ jobId: string }> {
+    const fullPrompt = stylePrompt 
+      ? `${imageDescription}. ${stylePrompt}`
+      : imageDescription;
+    
+    console.log(`[Image Generation] Affect: ${affectName}`);
+    console.log(`[Image Generation] Full Prompt:`, fullPrompt);
+    
+    return apiFetch<{ jobId: string }>('generateArchetypeImage', {
+      method: 'POST',
+      body: JSON.stringify({
+        affectId,
+        affectName,
         prompt: fullPrompt
       }),
     });

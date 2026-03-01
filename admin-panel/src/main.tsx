@@ -10,6 +10,7 @@ import Situations from './pages/Situations';
 import GlobalSettings from './pages/GlobalSettings';
 import Affects from './pages/Affects';
 import CMS from './pages/CMS';
+import MasterPrompt from './pages/MasterPrompt';
 import Simulator from './pages/Simulator';
 import Users from './pages/Users';
 import Analytics from './pages/Analytics';
@@ -21,7 +22,7 @@ import { Loader2 } from 'lucide-react';
 // Admin email whitelist - add authorized admin emails here
 const ADMIN_EMAILS = [
   'daniel@monumental-i.com',
-  // Add more admin emails as needed
+  'conkright.scott@gmail.com',
 ];
 
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
@@ -77,6 +78,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="situations" element={<Situations />} />
             <Route path="affects" element={<Affects />} />
             <Route path="cms" element={<CMS />} />
+            <Route path="master-prompt" element={<MasterPrompt />} />
             <Route path="simulator" element={<Simulator />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="analytics/responses" element={<Responses />} />

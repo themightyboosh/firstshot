@@ -47,11 +47,15 @@ export async function createImageJob(request: GenerateImageRequest): Promise<{ j
   
   const job: ImageGenerationJob = {
     id: jobId,
-    // Support both archetype and situation
+    // Support archetype, situation, cms, and affect
     archetypeId: request.archetypeId,
     archetypeName: request.archetypeName,
     situationId: request.situationId,
     situationName: request.situationName,
+    cmsId: request.cmsId,
+    cmsName: request.cmsName,
+    affectId: request.affectId,
+    affectName: request.affectName,
     prompt: request.prompt,
     status: 'pending',
     createdAt: new Date().toISOString(),
@@ -203,9 +207,9 @@ export async function processJobDirectly(jobId: string): Promise<{ success: bool
     logger.info(`Job ${jobId} uploading...`);
     
     // Determine upload path and ID
-    const entityId = job.archetypeId || job.situationId || 'unknown';
-    const entityType = job.archetypeId ? 'archetype' : (job.situationId ? 'situation' : 'unknown');
-    const entityName = job.archetypeName || job.situationName || 'unknown';
+    const entityId = job.archetypeId || job.situationId || job.cmsId || job.affectId || 'unknown';
+    const entityType = job.archetypeId ? 'archetype' : (job.situationId ? 'situation' : (job.cmsId ? 'cms' : (job.affectId ? 'affect' : 'unknown')));
+    const entityName = job.archetypeName || job.situationName || job.cmsName || job.affectName || 'unknown';
     
     const imageUrl = await uploadToGCS(imageBuffer, entityId, entityName, entityType);
     
@@ -242,6 +246,11 @@ export async function processJobDirectly(jobId: string): Promise<{ success: bool
         const cmsRef = db.collection('cms_content').doc(job.cmsId);
         await cmsRef.update({ imageUrl: imageUrl });
         logger.info(`Auto-saved image to CMS Item ${job.cmsId}`);
+      } else if (job.affectId) {
+        // Update Affect
+        const affectRef = db.collection('affects').doc(job.affectId);
+        await affectRef.update({ imageUrl: imageUrl });
+        logger.info(`Auto-saved image to Affect ${job.affectId}`);
       }
     } catch (err) {
       logger.error('Failed to auto-save result:', err);
@@ -302,10 +311,30 @@ async function generateImageWithImagen(prompt: string, retryCount = 0): Promise<
   }
   
   const data = await response.json();
+  
+  // Log the full response for debugging
+  logger.info(`Imagen API response:`, JSON.stringify(data, null, 2));
+  
   if (data.predictions?.[0]?.bytesBase64Encoded) {
     return Buffer.from(data.predictions[0].bytesBase64Encoded, 'base64');
   }
-  throw new Error('No image data in response');
+  
+  // Check for content filtering or other issues
+  if (data.predictions?.[0]?.safetyAttributes) {
+    const blocked = data.predictions[0].safetyAttributes.blocked;
+    const categories = data.predictions[0].safetyAttributes.categories || [];
+    if (blocked) {
+      throw new Error(`Image blocked by content filter. Categories: ${categories.join(', ')}`);
+    }
+  }
+  
+  // Check for explicit error message in response
+  if (data.error) {
+    throw new Error(`Imagen API error: ${data.error.message || JSON.stringify(data.error)}`);
+  }
+  
+  // Provide helpful fallback error
+  throw new Error(`No image generated. The prompt may have triggered content filters. Try a different description. Response: ${JSON.stringify(data)}`);
 }
 
 async function uploadToGCS(imageBuffer: Buffer, entityId: string, entityName: string, entityType: string = 'archetype'): Promise<string> {
@@ -338,19 +367,44 @@ async function uploadToGCS(imageBuffer: Buffer, entityId: string, entityName: st
 }
 
 export async function clearQueue(): Promise<number> {
-  const snapshot = await db.collection(JOBS_COLLECTION).get();
+  // Only clear pending and failed jobs, NOT processing ones
+  const pendingSnapshot = await db.collection(JOBS_COLLECTION)
+    .where('status', 'in', ['pending', 'failed'])
+    .get();
+  
+  if (pendingSnapshot.empty) {
+    logger.info('No pending/failed jobs to clear');
+    return 0;
+  }
+  
   const batch = db.batch();
-  snapshot.docs.forEach(doc => batch.delete(doc.ref));
+  pendingSnapshot.docs.forEach(doc => batch.delete(doc.ref));
   await batch.commit();
-  return snapshot.size;
+  
+  logger.info(`Cleared ${pendingSnapshot.size} jobs (preserved processing jobs)`);
+  return pendingSnapshot.size;
 }
 
 export async function cleanupOldJobs(hoursOld = 48): Promise<number> {
   const cutoff = new Date(Date.now() - hoursOld * 60 * 60 * 1000).toISOString();
-  const snapshot = await db.collection(JOBS_COLLECTION).where('createdAt', '<', cutoff).get();
+  
+  // Only clean up completed or failed jobs older than the cutoff
+  // Never delete processing jobs
+  const snapshot = await db.collection(JOBS_COLLECTION)
+    .where('status', 'in', ['completed', 'failed', 'pending'])
+    .where('createdAt', '<', cutoff)
+    .get();
+  
+  if (snapshot.empty) {
+    logger.info('No old jobs to clean up');
+    return 0;
+  }
+  
   const batch = db.batch();
   snapshot.docs.forEach(doc => batch.delete(doc.ref));
   await batch.commit();
+  
+  logger.info(`Cleaned up ${snapshot.size} old jobs`);
   return snapshot.size;
 }
 

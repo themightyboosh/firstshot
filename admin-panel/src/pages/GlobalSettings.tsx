@@ -162,39 +162,6 @@ export default function GlobalSettings() {
         </div>
       </div>
 
-      {/* Master Prompt Section */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-50 to-cyan-50 px-6 py-4 border-b">
-          <h3 className="text-lg font-bold text-gray-800">Master Prompt</h3>
-          <p className="text-sm text-gray-500">Template for constructing the final prompt based on context</p>
-        </div>
-        
-        <div className="p-6">
-          <textarea
-            value={config?.masterPrompt || ''}
-            onChange={(e) => setConfig(config ? { ...config, masterPrompt: e.target.value } : null)}
-            placeholder="Enter master prompt template using tokens..."
-            rows={10}
-            className="w-full border rounded-lg px-4 py-3 text-sm font-mono"
-          />
-          <div className="mt-3 text-xs text-gray-500">
-            <p className="font-medium mb-1">Available Tokens (will be replaced with actual values):</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <code className="bg-gray-100 px-1 py-0.5 rounded">*core-recognition*</code>
-              <code className="bg-gray-100 px-1 py-0.5 rounded">*protective-logic*</code>
-              <code className="bg-gray-100 px-1 py-0.5 rounded">*cost-under-stress*</code>
-              <code className="bg-gray-100 px-1 py-0.5 rounded">*repulsion-disavowal*</code>
-              <code className="bg-gray-100 px-1 py-0.5 rounded">*primary*</code>
-              <code className="bg-gray-100 px-1 py-0.5 rounded">*secondary*</code>
-              <code className="bg-gray-100 px-1 py-0.5 rounded">*situation_context*</code>
-              <code className="bg-gray-100 px-1 py-0.5 rounded">*affect_name*</code>
-              <code className="bg-gray-100 px-1 py-0.5 rounded">*affect_description*</code>
-              <code className="bg-gray-100 px-1 py-0.5 rounded">*affect_guidance*</code>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Email Templates Section */}
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
         <div className="bg-gradient-to-r from-orange-50 to-red-50 px-6 py-4 border-b">

@@ -1,6 +1,7 @@
 {
   "projects": {
-    "default": "realness-score"
+    "default": "realness-score",
+    "staging": "realness-score-staging"
   },
   "targets": {
     "realness-score": {
@@ -10,6 +11,16 @@
         ],
         "admin": [
           "realness-score-admin"
+        ]
+      }
+    },
+    "realness-score-staging": {
+      "hosting": {
+        "app": [
+          "realness-score-staging"
+        ],
+        "admin": [
+          "realness-score-staging-admin"
         ]
       }
     }

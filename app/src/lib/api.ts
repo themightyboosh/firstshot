@@ -27,6 +27,29 @@ export interface CMSItem {
   imageDescription?: string;
 }
 
+// CAS Configuration Types
+export interface QuestionOption {
+  id: string;
+  text: string;
+  terrain: string;
+}
+
+export interface Question {
+  id: string;
+  text: string;
+  options: QuestionOption[];
+}
+
+export interface CASConfiguration {
+  meta: {
+    version: string;
+    lastUpdated: string;
+    name: string;
+  };
+  questions: Question[];
+  archetypes: any[];
+}
+
 export const cmsApi = {
   getItem: async (id: string): Promise<CMSItem | null> => {
     try {

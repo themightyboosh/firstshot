@@ -5,7 +5,6 @@ import { Menu, X, User, Settings, LogOut, RefreshCcw, Sparkles, Info } from "luc
 import { motion, AnimatePresence } from "motion/react";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { MyArchetypeModal } from "@/app/components/my-archetype-modal";
 import { hasStoredArchetype, clearStoredArchetype } from "@/lib/archetypeStorage";
 import { useGlobalSettings } from "@/lib/GlobalSettingsContext";
 
@@ -14,12 +13,11 @@ export function Navigation() {
   const { appName } = useGlobalSettings();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
-  const [isArchetypeModalOpen, setIsArchetypeModalOpen] = useState(false);
 
   const handleViewArchetype = () => {
     setIsAccountMenuOpen(false);
     setIsMobileMenuOpen(false);
-    setIsArchetypeModalOpen(true);
+    navigate("/my-archetype");
   };
 
   const handleRetakeProfile = () => {
@@ -40,16 +38,22 @@ export function Navigation() {
     <nav className="border-b border-slate-800 bg-slate-900/30 backdrop-blur-sm sticky top-0 z-50">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link to="/situation" className="flex-shrink-0 py-[2px]">
-            <Logo size="small" />
-          </Link>
+          {/* Left - Hamburger Menu (mobile) / Account Menu (desktop) */}
+          <div className="w-24 flex items-center">
+            {/* Mobile Hamburger */}
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="md:hidden p-2 text-slate-300 hover:text-white transition-colors"
+            >
+              {isMobileMenuOpen ? (
+                <X className="w-6 h-6" />
+              ) : (
+                <Menu className="w-6 h-6" />
+              )}
+            </button>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-6">
-            
             {/* Desktop Account Menu */}
-            <div className="relative">
+            <div className="hidden md:block relative">
               <button
                 onClick={() => setIsAccountMenuOpen(!isAccountMenuOpen)}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 hover:border-slate-600 transition-all"
@@ -75,7 +79,7 @@ export function Navigation() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
                       transition={{ duration: 0.2 }}
-                      className="absolute right-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50"
+                      className="absolute left-0 mt-2 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-xl overflow-hidden z-50"
                     >
                       <div className="py-2">
                         {hasStoredArchetype() && (
@@ -124,17 +128,13 @@ export function Navigation() {
             </div>
           </div>
 
-          {/* Mobile Hamburger */}
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden p-2 text-slate-300 hover:text-white transition-colors"
-          >
-            {isMobileMenuOpen ? (
-              <X className="w-6 h-6" />
-            ) : (
-              <Menu className="w-6 h-6" />
-            )}
-          </button>
+          {/* Center - Logo */}
+          <Link to="/situation" className="flex-shrink-0 py-[2px] absolute left-1/2 -translate-x-1/2">
+            <Logo size="small" />
+          </Link>
+
+          {/* Right - Empty spacer for balance */}
+          <div className="w-24"></div>
         </div>
 
         {/* Mobile Menu */}
@@ -195,12 +195,6 @@ export function Navigation() {
           )}
         </AnimatePresence>
       </div>
-
-      {/* My Archetype Modal */}
-      <MyArchetypeModal 
-        isOpen={isArchetypeModalOpen} 
-        onClose={() => setIsArchetypeModalOpen(false)} 
-      />
     </nav>
   );
 }

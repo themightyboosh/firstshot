@@ -12,6 +12,7 @@ import { ResetPasswordScreen } from "@/app/components/reset-password-screen";
 import { PasswordResetSuccessScreen } from "@/app/components/password-reset-success-screen";
 import { AssessmentIntroScreen } from "@/app/components/assessment-intro-screen";
 import { ArchetypeRevealScreen } from "@/app/components/archetype-reveal-screen";
+import { MyArchetypeScreen } from "@/app/components/my-archetype-screen";
 import { AboutScreen } from "@/app/components/about-screen";
 import { RequireAuth } from "@/app/components/require-auth";
 
@@ -55,6 +56,10 @@ export const router = createBrowserRouter([
   {
     path: "/archetype-reveal",
     element: <RequireAuth><ArchetypeRevealScreen /></RequireAuth>,
+  },
+  {
+    path: "/my-archetype",
+    element: <RequireAuth><MyArchetypeScreen /></RequireAuth>,
   },
   {
     path: "/emotions",

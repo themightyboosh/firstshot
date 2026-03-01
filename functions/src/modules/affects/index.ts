@@ -46,11 +46,13 @@ export const getAffects = async (): Promise<Affect[]> => {
 export const updateAffect = async (id: string, data: Partial<Affect>): Promise<void> => {
   if (!id) throw new Error("ID required");
   
-  const updateData: Partial<Affect> = {};
+  const updateData: Record<string, any> = {};
   if (data.name !== undefined) updateData.name = data.name;
   if (data.description !== undefined) updateData.description = data.description;
   if (data.interactionGuidance !== undefined) updateData.interactionGuidance = data.interactionGuidance;
   if (data.iconUrl !== undefined) updateData.iconUrl = data.iconUrl;
+  if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl;
+  if (data.imageDescription !== undefined) updateData.imageDescription = data.imageDescription;
   
   await db.collection(COLLECTION_NAME).doc(id).update(updateData);
 };

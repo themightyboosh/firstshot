@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
-import { Edit2, Loader2, Image as ImageIcon, Upload, Check, RotateCcw } from 'lucide-react';
-import { affectsApi, imageGenerationApi } from '../lib/api';
+import { Edit2, Loader2, Image as ImageIcon, Upload, Check, RotateCcw, Wand2, Trash2 } from 'lucide-react';
+import { affectsApi, imageGenerationApi, globalSettingsApi } from '../lib/api';
 import type { Affect } from '../lib/types';
+import { ImageGenerationPreview } from '../components/ImageGenerationPreview';
 
 export default function Affects() {
   const [affects, setAffects] = useState<Affect[]>([]);
@@ -13,9 +14,15 @@ export default function Affects() {
   
   const [uploadingImage, setUploadingImage] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  
+  // Image generation state
+  const [stylePrompt, setStylePrompt] = useState('');
+  const [generatingImage, setGeneratingImage] = useState(false);
+  const [currentImageJobId, setCurrentImageJobId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     loadAffects();
+    loadStylePrompt();
   }, []);
 
   const loadAffects = async () => {
@@ -28,6 +35,15 @@ export default function Affects() {
       setError('Failed to load affects');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadStylePrompt = async () => {
+    try {
+      const config = await globalSettingsApi.getConfig();
+      setStylePrompt(config.stylePrompt || '');
+    } catch (err) {
+      console.error('Failed to load style prompt:', err);
     }
   };
 
@@ -78,6 +94,53 @@ export default function Affects() {
     }
   };
 
+  const handleGenerateImage = async () => {
+    if (!editing || !editing.id || !editing.name) return;
+    if (!editing.imageDescription) {
+      setError('Please enter an image description first');
+      return;
+    }
+    
+    setGeneratingImage(true);
+    setError(null);
+    
+    try {
+      const result = await imageGenerationApi.generateAffectImage(
+        editing.id,
+        editing.name,
+        editing.imageDescription,
+        stylePrompt
+      );
+      
+      setCurrentImageJobId(result.jobId);
+      setSuccessMsg('Image generation started...');
+      
+      // Trigger processing
+      imageGenerationApi.triggerJobProcessing(result.jobId).catch(err => {
+        console.error('Trigger processing failed:', err);
+      });
+      
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start generation');
+      setGeneratingImage(false);
+    }
+  };
+
+  const handleImageGenerated = (imageUrl: string) => {
+    setEditing(prev => prev ? { ...prev, imageUrl } : null);
+    setCurrentImageJobId(undefined);
+    setGeneratingImage(false);
+    setSuccessMsg('Image generated successfully!');
+    setTimeout(() => setSuccessMsg(null), 3000);
+    loadAffects(); // Refresh list since backend auto-saved
+  };
+
+  const handleImageGenerationError = (errorMsg: string) => {
+    setError(`Image generation failed: ${errorMsg}`);
+    setCurrentImageJobId(undefined);
+    setGeneratingImage(false);
+  };
+
   if (loading && !editing) return (
     <div className="flex h-full items-center justify-center">
       <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
@@ -122,7 +185,7 @@ export default function Affects() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Icon</label>
+              <label className="block text-sm font-medium text-gray-700">Icon (overlaid on card)</label>
               <div className="flex items-center space-x-4 mt-2">
                 <div className="w-16 h-16 bg-black rounded-lg flex items-center justify-center overflow-hidden border border-gray-300">
                   {editing.iconUrl ? (
@@ -143,6 +206,62 @@ export default function Affects() {
                 </button>
               </div>
             </div>
+
+            {/* Background Image Section */}
+            <div className="border-t border-gray-200 pt-4 mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Background Image (50% opacity behind icon)</label>
+              
+              {/* Current/Generated Image Preview */}
+              <div className="mb-4">
+                <ImageGenerationPreview
+                  imageUrl={editing.imageUrl}
+                  jobId={currentImageJobId}
+                  onImageGenerated={handleImageGenerated}
+                  onError={handleImageGenerationError}
+                  size="md"
+                />
+              </div>
+
+              {/* Image Description for AI */}
+              <div className="mb-3">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Image Description (for AI generation)</label>
+                <textarea
+                  rows={2}
+                  value={editing.imageDescription || ''}
+                  onChange={e => setEditing({...editing, imageDescription: e.target.value})}
+                  placeholder="Describe the background image you want... e.g., 'Abstract emotional energy swirls in warm tones representing joy'"
+                  className="w-full border border-gray-300 rounded-lg p-2 text-sm"
+                />
+              </div>
+
+              {/* Generate Button */}
+              <button
+                type="button"
+                onClick={handleGenerateImage}
+                disabled={generatingImage || !editing.imageDescription}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                {generatingImage ? (
+                  <Loader2 className="animate-spin w-4 h-4" />
+                ) : (
+                  <Wand2 className="w-4 h-4" />
+                )}
+                <span>{generatingImage ? 'Generating...' : 'Generate Background Image'}</span>
+              </button>
+
+              {/* Clear Image */}
+              {editing.imageUrl && (
+                <button
+                  type="button"
+                  onClick={() => setEditing({...editing, imageUrl: undefined})}
+                  className="w-full mt-2 flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 text-sm"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Remove Background Image</span>
+                </button>
+              )}
+            </div>
+
             <div className="pt-4">
               <button 
                 type="submit" 

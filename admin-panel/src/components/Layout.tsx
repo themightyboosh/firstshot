@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Settings, MessageSquare, Palette, Heart, BarChart3, FileText, Users, Star, List, LogOut, Menu, X, ChevronDown, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, Settings, MessageSquare, Palette, Heart, BarChart3, FileText, Users, Star, List, LogOut, Menu, X, ChevronDown, TrendingUp, Wand2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { globalSettingsApi } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
@@ -42,6 +42,7 @@ export default function Layout() {
     { path: '/situations', label: 'Situations', icon: MessageSquare },
     { path: '/affects', label: 'Affects', icon: Heart },
     { path: '/cms', label: 'Page Content', icon: FileText },
+    { path: '/master-prompt', label: 'Master Prompt', icon: Wand2 },
     { path: '/simulator', label: 'Simulator', icon: BarChart3 },
     { 
       path: '/analytics', 

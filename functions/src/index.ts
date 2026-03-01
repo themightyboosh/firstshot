@@ -587,10 +587,10 @@ export const generateArchetypeImage = functions.https.onRequest(async (req, res)
   if (!requireMethod(req, res, ["POST"])) return;
   
   try {
-    const { archetypeId, archetypeName, situationId, situationName, cmsId, cmsName, prompt } = req.body || {};
+    const { archetypeId, archetypeName, situationId, situationName, cmsId, cmsName, affectId, affectName, prompt } = req.body || {};
     
-    if ((!archetypeId && !situationId && !cmsId) || !prompt) {
-      res.status(400).json({ message: "Missing ID (archetypeId or situationId or cmsId) or prompt" });
+    if ((!archetypeId && !situationId && !cmsId && !affectId) || !prompt) {
+      res.status(400).json({ message: "Missing ID (archetypeId, situationId, cmsId, or affectId) or prompt" });
       return;
     }
     
@@ -608,6 +608,8 @@ export const generateArchetypeImage = functions.https.onRequest(async (req, res)
       situationName: situationName || "Unknown",
       cmsId,
       cmsName: cmsName || "Unknown",
+      affectId,
+      affectName: affectName || "Unknown",
       prompt,
     });
     

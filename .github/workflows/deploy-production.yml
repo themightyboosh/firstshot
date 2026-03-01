@@ -1,0 +1,70 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            app/pnpm-lock.yaml
+            admin-panel/pnpm-lock.yaml
+            functions/pnpm-lock.yaml
+
+      - name: Install app dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: app
+
+      - name: Build app
+        run: pnpm run build
+        working-directory: app
+
+      - name: Install admin-panel dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: admin-panel
+
+      - name: Build admin-panel
+        run: pnpm run build
+        working-directory: admin-panel
+
+      - name: Install functions dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: functions
+
+      - name: Build functions
+        run: pnpm run build
+        working-directory: functions
+
+      - name: Deploy to Firebase (Production)
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_PRODUCTION }}
+          projectId: realness-score
+          channelId: live
+
+      - name: Deploy Functions & Rules (Production)
+        run: |
+          npx firebase-tools deploy \
+            --only functions,firestore:rules,storage \
+            --project realness-score \
+            --force
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

@@ -6,6 +6,8 @@ export interface ImageGenerationJob {
   situationName?: string;
   cmsId?: string;
   cmsName?: string;
+  affectId?: string;
+  affectName?: string;
   prompt: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   imageUrl?: string;
@@ -22,6 +24,8 @@ export interface GenerateImageRequest {
   situationName?: string;
   cmsId?: string;
   cmsName?: string;
+  affectId?: string;
+  affectName?: string;
   prompt: string;
 }
 

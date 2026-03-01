@@ -76,4 +76,6 @@ export interface Affect {
   description: string;
   interactionGuidance: string;
   iconUrl: string;
+  imageUrl?: string;           // Background image for the card
+  imageDescription?: string;   // AI prompt for image generation
 }
