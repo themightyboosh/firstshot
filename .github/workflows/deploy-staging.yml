@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+      - stage
 
 jobs:
   deploy:
@@ -52,6 +53,9 @@ jobs:
         run: pnpm run build
         working-directory: functions
 
+      - name: Set up service account
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_STAGING }}' > /tmp/gcloud-key.json
+
       - name: Deploy to Firebase (Staging)
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
@@ -67,4 +71,4 @@ jobs:
             --project realness-score-staging \
             --force
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcloud-key.json
