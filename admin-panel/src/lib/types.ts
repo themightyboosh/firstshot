@@ -63,6 +63,24 @@ export interface ScoringResult {
   rawAnswers?: Answers;
 }
 
+/**
+ * Configuration for the scoring algorithm.
+ * All values that were previously hardcoded are now editable.
+ */
+export interface ScoringConfig {
+  firstChoicePoints: number;
+  secondChoicePoints: number;
+  legacyChoicePoints: number;
+  terrainPriority: Record<TerrainType, number>;
+  secureThresholdRanked: number;
+  secureThresholdSimple: number;
+  oscillationThresholdRanked: number;
+  oscillationThresholdSimple: number;
+  repulsionFlagThreshold: number;
+  dominanceRatioThreshold: number;
+  archetypeMapping: Record<string, Record<string, string> | string>;
+}
+
 export interface CASConfiguration {
   meta: {
     version: string;
@@ -71,6 +89,7 @@ export interface CASConfiguration {
   };
   questions: Question[];
   archetypes: Archetype[];
+  scoringConfig?: ScoringConfig;
 }
 
 export interface Situation {

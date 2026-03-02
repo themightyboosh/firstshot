@@ -60,6 +60,33 @@ export interface ScoringResult {
   rawAnswers?: Answers;
 }
 
+/**
+ * Configuration for the scoring algorithm.
+ * All values that were previously hardcoded are now editable.
+ */
+export interface ScoringConfig {
+  // Point weights per rank
+  firstChoicePoints: number;    // default: 2
+  secondChoicePoints: number;   // default: 1
+  legacyChoicePoints: number;   // default: 1
+
+  // Tie-breaking priority (higher number wins ties)
+  terrainPriority: Record<TerrainType, number>;
+
+  // Override thresholds
+  secureThresholdRanked: number;      // default: 12
+  secureThresholdSimple: number;      // default: 6
+  oscillationThresholdRanked: number; // default: 6
+  oscillationThresholdSimple: number; // default: 3
+  repulsionFlagThreshold: number;     // default: 4
+
+  // Consistency check
+  dominanceRatioThreshold: number;    // default: 0.6
+
+  // Archetype mapping: primaryTerrain → (secondaryTerrain → archetypeId) or just archetypeId
+  archetypeMapping: Record<string, Record<string, string> | string>;
+}
+
 export interface CASConfiguration {
   meta: {
     version: string;
@@ -68,6 +95,7 @@ export interface CASConfiguration {
   };
   questions: Question[];
   archetypes: Archetype[];
+  scoringConfig?: ScoringConfig;
 }
 
 export interface Affect {

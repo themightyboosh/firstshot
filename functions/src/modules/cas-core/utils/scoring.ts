@@ -1,4 +1,46 @@
-import { TerrainType, ScoringResult, CASConfiguration, Question, Answers, RankedAnswer } from "../types";
+import { TerrainType, ScoringResult, ScoringConfig, CASConfiguration, Question, Answers, RankedAnswer } from "../types";
+
+/**
+ * Default scoring configuration — matches the original hardcoded values.
+ * Used as fallback when config.scoringConfig is undefined.
+ */
+export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
+  firstChoicePoints: 2,
+  secondChoicePoints: 1,
+  legacyChoicePoints: 1,
+
+  terrainPriority: {
+    Disorganized: 4,
+    Anxious: 3,
+    Avoidant: 2,
+    Secure: 1,
+  },
+
+  secureThresholdRanked: 12,
+  secureThresholdSimple: 6,
+  oscillationThresholdRanked: 6,
+  oscillationThresholdSimple: 3,
+  repulsionFlagThreshold: 4,
+
+  dominanceRatioThreshold: 0.6,
+
+  archetypeMapping: {
+    Disorganized: "mystery_mosaic",
+    Secure: "grounded_navigator",
+    Anxious: {
+      Secure: "emotional_enthusiast",
+      Avoidant: "passionate_pilgrim",
+      Disorganized: "heartfelt_defender",
+      Anxious: "emotional_enthusiast",
+    },
+    Avoidant: {
+      Secure: "lone_wolf",
+      Anxious: "independent_icon",
+      Disorganized: "chill_conductor",
+      Avoidant: "lone_wolf",
+    },
+  },
+};
 
 /**
  * Check if an answer is a ranked answer (V2) or simple answer (legacy)
@@ -10,24 +52,29 @@ function isRankedAnswer(answer: string | RankedAnswer): answer is RankedAnswer {
 /**
  * Calculate terrain scores and determine archetype from quiz answers.
  * 
+ * All scoring rules are read from config.scoringConfig.
+ * If scoringConfig is absent, DEFAULT_SCORING_CONFIG is used.
+ * 
  * Scoring Rules (V2 Ranked Choice):
- * - 1st choice ("Most like me"): +2 points
- * - 2nd choice ("Next most like me"): +1 point
+ * - 1st choice ("Most like me"): +firstChoicePoints
+ * - 2nd choice ("Next most like me"): +secondChoicePoints
  * - Repulsion ("Least like me"): Tracked separately as orthogonal signal
  * 
  * Legacy Support:
- * - Simple answers (single optionId): +1 point each
+ * - Simple answers (single optionId): +legacyChoicePoints each
  * 
  * Overrides:
  * - Disorganized override if high Anxious + Avoidant (hidden oscillation)
  * - Secure-first flag if Secure is dominant
  * 
- * Tie-breaking priority: Disorganized > Anxious > Avoidant > Secure
+ * Tie-breaking uses terrainPriority from config.
  */
 export function calculateTerrainScore(
   answers: Answers,
   config: CASConfiguration
 ): ScoringResult {
+  const sc = config.scoringConfig || DEFAULT_SCORING_CONFIG;
+
   const scores: Record<TerrainType, number> = {
     Anxious: 0,
     Avoidant: 0,
@@ -64,27 +111,20 @@ export function calculateTerrainScore(
       const secondTerrain = getTerrainForOption(questionId, answer.second);
       const repulsionTerrain = getTerrainForOption(questionId, answer.repulsion);
 
-      if (firstTerrain) scores[firstTerrain] += 2;
-      if (secondTerrain) scores[secondTerrain] += 1;
+      if (firstTerrain) scores[firstTerrain] += sc.firstChoicePoints;
+      if (secondTerrain) scores[secondTerrain] += sc.secondChoicePoints;
       if (repulsionTerrain) repulsionScores[repulsionTerrain] += 1;
     } else {
-      // Legacy single-choice scoring (+1 point)
+      // Legacy single-choice scoring
       const terrain = getTerrainForOption(questionId, answer);
-      if (terrain) scores[terrain] += 1;
+      if (terrain) scores[terrain] += sc.legacyChoicePoints;
     }
   });
 
-  // Sort terrains by score (descending), with tie-breaking priority
-  const terrainPriority: Record<TerrainType, number> = {
-    Disorganized: 4,
-    Anxious: 3,
-    Avoidant: 2,
-    Secure: 1
-  };
-
+  // Sort terrains by score (descending), with tie-breaking priority from config
   const sortedTerrains = (Object.keys(scores) as TerrainType[]).sort((a, b) => {
     if (scores[b] !== scores[a]) return scores[b] - scores[a];
-    return terrainPriority[b] - terrainPriority[a];
+    return (sc.terrainPriority[b] || 0) - (sc.terrainPriority[a] || 0);
   });
 
   let primaryTerrain = sortedTerrains[0];
@@ -97,14 +137,14 @@ export function calculateTerrainScore(
   const isRankedMode = maxScore > 8;
 
   // Secure-First Override: Flag if Secure is dominant
-  const secureThreshold = isRankedMode ? 12 : 6; // Adjust for ranked vs simple
+  const secureThreshold = isRankedMode ? sc.secureThresholdRanked : sc.secureThresholdSimple;
   if (scores.Secure >= secureThreshold) {
     flags.push("confirmed_secure");
   }
 
   // Disorganized Override (Hidden Fragmentation):
   // High Anxious AND high Avoidant suggests oscillation pattern
-  const oscillationThreshold = isRankedMode ? 6 : 3;
+  const oscillationThreshold = isRankedMode ? sc.oscillationThresholdRanked : sc.oscillationThresholdSimple;
   if (scores.Anxious >= oscillationThreshold && scores.Avoidant >= oscillationThreshold) {
     flags.push("hidden_disorganized");
     primaryTerrain = "Disorganized";
@@ -112,11 +152,11 @@ export function calculateTerrainScore(
 
   // Repulsion-based flags
   const maxRepulsion = Math.max(...Object.values(repulsionScores));
-  if (maxRepulsion >= 4) {
+  if (maxRepulsion >= sc.repulsionFlagThreshold) {
     const highRepulsion = (Object.entries(repulsionScores) as [TerrainType, number][])
-      .filter(([, count]) => count >= 4)
+      .filter(([, count]) => count >= sc.repulsionFlagThreshold)
       .map(([terrain]) => terrain);
-    
+
     if (highRepulsion.length > 0) {
       flags.push(`strong_repulsion_${highRepulsion[0].toLowerCase()}`);
     }
@@ -127,37 +167,24 @@ export function calculateTerrainScore(
   if (totalAnswers === 8) {
     // Full assessment completed
     flags.push("complete_assessment");
-    
+
     // Check for high consistency (one terrain dominates)
     const dominanceRatio = scores[primaryTerrain] / (isRankedMode ? 24 : 8);
-    if (dominanceRatio >= 0.6) {
+    if (dominanceRatio >= sc.dominanceRatioThreshold) {
       flags.push("high_consistency");
     }
   }
 
-  // Archetype Mapping based on Primary + Secondary terrain
+  // Archetype Mapping from config
   let archetypeId: string | undefined;
+  const mapping = sc.archetypeMapping[primaryTerrain];
 
-  if (primaryTerrain === "Disorganized") {
-    archetypeId = "mystery_mosaic";
-  } else if (primaryTerrain === "Secure") {
-    archetypeId = "grounded_navigator";
-  } else if (primaryTerrain === "Anxious") {
-    const anxiousArchetypes: Record<TerrainType, string> = {
-      Secure: "emotional_enthusiast",
-      Avoidant: "passionate_pilgrim",
-      Disorganized: "heartfelt_defender",
-      Anxious: "emotional_enthusiast"
-    };
-    archetypeId = anxiousArchetypes[secondaryTerrain];
-  } else if (primaryTerrain === "Avoidant") {
-    const avoidantArchetypes: Record<TerrainType, string> = {
-      Secure: "lone_wolf",
-      Anxious: "independent_icon",
-      Disorganized: "chill_conductor",
-      Avoidant: "lone_wolf"
-    };
-    archetypeId = avoidantArchetypes[secondaryTerrain];
+  if (typeof mapping === 'string') {
+    // Direct mapping (e.g., Disorganized → mystery_mosaic)
+    archetypeId = mapping;
+  } else if (mapping && typeof mapping === 'object') {
+    // Lookup by secondary terrain
+    archetypeId = mapping[secondaryTerrain];
   }
 
   const archetype = config.archetypes.find(a => a.id === archetypeId) || null;

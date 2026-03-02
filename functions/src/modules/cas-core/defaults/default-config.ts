@@ -1,4 +1,5 @@
 import { CASConfiguration, Archetype, Question } from "../types";
+import { DEFAULT_SCORING_CONFIG } from "../utils/scoring";
 
 const archetypes: Archetype[] = [
   {
@@ -197,5 +198,6 @@ export const defaultConfig: CASConfiguration = {
     name: "Terrain System Configuration"
   },
   questions,
-  archetypes
+  archetypes,
+  scoringConfig: DEFAULT_SCORING_CONFIG,
 };

@@ -12,10 +12,12 @@ import Affects from './pages/Affects';
 import CMS from './pages/CMS';
 import MasterPrompt from './pages/MasterPrompt';
 import Simulator from './pages/Simulator';
+import ScoringConfig from './pages/ScoringConfig';
 import Users from './pages/Users';
 import Analytics from './pages/Analytics';
 import Responses from './pages/Responses';
 import Feedback from './pages/Feedback';
+import Backups from './pages/Backups';
 import './index.css';
 import { Loader2 } from 'lucide-react';
 
@@ -27,7 +29,7 @@ const ADMIN_EMAILS = [
 
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
   const { user, loading } = useAuth();
-  
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -35,7 +37,7 @@ function ProtectedRoute({ children }: { children: React.ReactElement }) {
       </div>
     );
   }
-  
+
   if (!user) {
     return <Navigate to="/login" replace />;
   }
@@ -52,7 +54,7 @@ function ProtectedRoute({ children }: { children: React.ReactElement }) {
           </div>
           <h1 className="text-xl font-bold text-gray-900 mb-2">Access Denied</h1>
           <p className="text-gray-600 mb-4">Your email ({user.email}) is not authorized to access this admin panel.</p>
-          <button 
+          <button
             onClick={() => window.location.href = '/login'}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
           >
@@ -62,7 +64,7 @@ function ProtectedRoute({ children }: { children: React.ReactElement }) {
       </div>
     );
   }
-  
+
   return children;
 }
 
@@ -79,12 +81,14 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="affects" element={<Affects />} />
             <Route path="cms" element={<CMS />} />
             <Route path="master-prompt" element={<MasterPrompt />} />
+            <Route path="scoring" element={<ScoringConfig />} />
             <Route path="simulator" element={<Simulator />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="analytics/responses" element={<Responses />} />
             <Route path="analytics/feedback" element={<Feedback />} />
             <Route path="users" element={<Users />} />
             <Route path="global-settings" element={<GlobalSettings />} />
+            <Route path="backups" element={<Backups />} />
           </Route>
         </Routes>
       </BrowserRouter>
